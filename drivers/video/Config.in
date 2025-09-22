@@ -238,7 +238,6 @@ if [ "$CONFIG_FB" = "y" ]; then
    if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
       tristate '  Virtual Frame Buffer support (ONLY FOR TESTING!) (EXPERIMENTAL)' CONFIG_FB_VIRTUAL
    fi
-
    bool '  Advanced low level driver options' CONFIG_FBCON_ADVANCED
    if [ "$CONFIG_FBCON_ADVANCED" = "y" ]; then
       tristate '    Monochrome support' CONFIG_FBCON_MFB

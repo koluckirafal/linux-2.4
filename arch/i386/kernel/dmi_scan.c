@@ -16,7 +16,7 @@
 
 unsigned long dmi_broken;
 int is_sony_vaio_laptop;
-
+#define XXX printk(KERN_INFO "Reached line %d\n",__LINE__);
 struct dmi_header
 {
 	u8	type;
@@ -28,21 +28,27 @@ struct dmi_header
 #define dmi_printk(x) printk x
 #else
 #define dmi_printk(x)
+//#define dmi_printk(x) printk x
 #endif
 
 static char * __init dmi_string(struct dmi_header *dm, u8 s)
 {
 	u8 *bp=(u8 *)dm;
+	XXX
 	bp+=dm->length;
+	XXX
 	if(!s)
 		return "";
+		XXX
 	s--;
 	while(s>0 && *bp)
 	{
+		XXX
 		bp+=strlen(bp);
 		bp++;
 		s--;
 	}
+	XXX
 	return bp;
 }
 
@@ -159,16 +165,24 @@ static char *dmi_ident[DMI_STRING_MAX];
 static void __init dmi_save_ident(struct dmi_header *dm, int slot, int string)
 {
 	char *d = (char*)dm;
-	char *p = dmi_string(dm, d[string]);
+	char *p;
+	XXX
+	p = dmi_string(dm, d[string]);
+	XXX
 	if(p==NULL || *p == 0)
 		return;
+		XXX
 	if (dmi_ident[slot])
 		return;
-	dmi_ident[slot] = alloc_bootmem(strlen(p)+1);
+	XXX
+	dmi_ident[slot] = kmalloc(strlen(p)+1, GFP_KERNEL);
+	//dmi_ident[slot] = alloc_bootmem(strlen(p)+1);
+	XXX
 	if(dmi_ident[slot])
 		strcpy(dmi_ident[slot], p);
 	else
 		printk(KERN_ERR "dmi_save_ident: out of memory.\n");
+		XXX
 }
 
 /*

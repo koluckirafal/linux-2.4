@@ -126,7 +126,7 @@ void bust_spinlocks(int yes)
 
 asmlinkage void do_invalid_op(struct pt_regs *, unsigned long);
 extern unsigned long idt;
-
+int uae_handle_fault(struct pt_regs *regs, unsigned long error_code, unsigned long addr);
 /*
  * This routine handles page faults.  It determines the address,
  * and the problem, and then passes it off to one of the appropriate
@@ -156,7 +156,8 @@ asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long error_code)
 		local_irq_enable();
 
 	tsk = current;
-
+	if (uae_handle_fault(regs,error_code,address))
+	    return;
 	/*
 	 * We fault-in kernel-space virtual memory on-demand. The
 	 * 'reference' page table is init_mm.pgd.

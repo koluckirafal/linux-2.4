@@ -92,6 +92,12 @@ struct rivafb_info {
 #ifdef CONFIG_MTRR
 	struct { int vram; int vram_valid; } mtrr;
 #endif
+	unsigned int Chipset;
+	int forceCRTC;
+	Bool SecondCRTC;
+	int FlatPanel;
 };
+
+void riva_common_setup(struct rivafb_info*);
 
 #endif /* __RIVAFB_H */

@@ -366,6 +366,9 @@ struct fb_info_tdfx {
 #endif
 };
 
+#include "amithlon.h"
+#include <asm/uaccess.h>
+
 /*
  *  Frame buffer device API
  */
@@ -390,6 +393,8 @@ static int tdfxfb_set_cmap(struct fb_cmap* cmap,
 			   int con,
 			   struct fb_info* info);
 
+static int tdfxfb_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
+                           unsigned long arg, int con, struct fb_info *info);
 /*
  *  Interface to the low level console driver
  */
@@ -455,6 +460,18 @@ static u32 do_calc_pll(int freq, int* freq_out);
 static void  do_write_regs(struct banshee_reg* reg);
 static unsigned long do_lfb_size(void);
 
+static void tdfxfb_rectcopy(struct fb_info *info, 
+				int sy, 
+				int sx, 
+				int dy,
+				int dx, 
+				int height, 
+				int width);
+
+static u32 gxres = 0;
+static u32 gyres = 0;
+static u32 gbpp = 0;
+
 /*
  *  Interface used by the world
  */
@@ -478,6 +495,7 @@ static struct fb_ops tdfxfb_ops = {
 	fb_get_cmap:	tdfxfb_get_cmap,
 	fb_set_cmap:	tdfxfb_set_cmap,
 	fb_pan_display:	tdfxfb_pan_display,
+	fb_ioctl:	tdfxfb_ioctl,
 };
 
 static struct pci_device_id tdfxfb_id_table[] __devinitdata = {
@@ -1065,6 +1083,19 @@ static void tdfx_cfbX_bmove(struct display* p,
 		 fb_info.current_par.lpitch, 
 		 fb_info.current_par.bpp);
 }
+
+static void tdfxfb_rectcopy(struct fb_info *info, 
+				int sy, 
+				int sx, 
+				int dy,
+				int dx, 
+				int height, 
+				int width) {
+   do_bitblt(sx,sy,dx,dy,width,height, 
+		 fb_info.current_par.lpitch, 
+		 fb_info.current_par.bpp);
+}
+
 static void tdfx_cfb8_putc(struct vc_data* conp,
 			       struct display* p,
 			       int c, int yy,int xx)
@@ -1470,6 +1501,8 @@ static void tdfxfb_set_par(struct tdfxfb_par* par,
     reg.crt[0x09] |= 0x80;
   } else {
     reg.screensize = par->width | (par->height << 12);
+	gxres = par->width;
+	gyres = par->height;
     reg.vidcfg &= ~VIDCFG_HALF_MODE;
   }
   if (par->video & TDFXF_INTERLACE)
@@ -1486,14 +1519,17 @@ static void tdfxfb_set_par(struct tdfxfb_par* par,
     case 24:
       reg.miscinit0 &= ~(1 << 30);
       reg.miscinit0 &= ~(1 << 31);
+      gbpp = 8;
       break;
     case 16:
       reg.miscinit0 |= (1 << 30);
       reg.miscinit0 |= (1 << 31);
+      gbpp = 16;
       break;
     case 32:
       reg.miscinit0 |= (1 << 30);
       reg.miscinit0 &= ~(1 << 31);
+      gbpp = 32;
       break;
   }
 #endif
@@ -1644,10 +1680,6 @@ static int tdfxfb_encode_var(struct fb_var_screeninfo* var,
     break;
   case 24:
   case 32:
-    v.red.offset   = 16;
-    v.green.offset = 8;
-    v.blue.offset  = 0;
-    v.red.length = v.green.length = v.blue.length = 8;
     break;
   }
   v.height = v.width = -1;
@@ -1858,18 +1890,57 @@ static int tdfxfb_pan_display(struct fb_var_screeninfo* var,
 			      struct fb_info* fb) {
   struct fb_info_tdfx* i = (struct fb_info_tdfx*)fb;
 
-  if(nopan)                return -EINVAL;
-  if(var->xoffset)         return -EINVAL;
+//  if(nopan)                return -EINVAL;
+//  if(var->xoffset)         return -EINVAL;
+#if 0
   if(var->yoffset > var->yres_virtual)   return -EINVAL;
   if(nowrap && 
      (var->yoffset + var->yres > var->yres_virtual)) return -EINVAL;
- 
-  if (con==currcon)
+#endif 
+//  if (con==currcon)
     do_pan_var(var,i);
    
   fb_display[con].var.xoffset=var->xoffset;
   fb_display[con].var.yoffset=var->yoffset; 
   return 0;
+}
+
+static int tdfxfb_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
+                           unsigned long arg, int con, struct fb_info *info)
+{
+//       struct radeonfb_info *rinfo = (struct radeonfb_info *) info;
+	u32 scrnvar, width, height, bpp, vidcfg, stride, rbpp;
+
+	switch (cmd) {
+	 case AMITHLON_COPY_RECT: 
+		{ 
+	   		amithlon_copy ac;
+	     		if (copy_from_user(&ac, (void *) arg, sizeof(ac)))
+		 		return -EFAULT;
+			scrnvar = tdfx_inl(VIDSCREENSIZE);
+			width = (scrnvar & 2047);
+			height = (scrnvar >> 12);
+			vidcfg = tdfx_inl(VIDPROCCFG);
+			bpp = ((scrnvar >> 18) & 7);
+			rbpp = 8;
+			if (bpp == 4) rbpp = 16;
+			stride = width * ((rbpp+7)>>3);
+ 	   		do_bitblt(ac.sx, ac.sy, 
+				  ac.dx, ac.dy, ac.width, ac.height, stride ,rbpp);
+//			printk(KERN_ERR "sx:%d  sy:%d  dx:%d  dy:%d\n",ac.sx,ac.sy,ac.dx,ac.dy);
+	     		return 0;
+		}
+	case AMITHLON_MAXCLOCK:
+	  {
+	    unsigned int answer=240000;
+
+	    if (put_user(answer, (u_int32_t*)arg))
+	      return -EFAULT;
+	    return 0;
+	  }
+
+	return -EINVAL;
+}
 }
 
 static int tdfxfb_get_cmap(struct fb_cmap *cmap, 
@@ -2026,7 +2097,7 @@ static int __devinit tdfxfb_probe(struct pci_dev *pdev,
 	memset(&var, 0, sizeof(var));
 	
 	if (!mode_option || !fb_find_mode(&var, &fb_info.fb_info,
-					  mode_option, NULL, 0, NULL, 8))
+					  mode_option, NULL, 0, NULL, 0))
 		var = default_mode[0].var;
 
 	noaccel ? (var.accel_flags &= ~FB_ACCELF_TEXT) :

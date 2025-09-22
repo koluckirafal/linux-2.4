@@ -1656,7 +1656,7 @@ static int w840_suspend (struct pci_dev *pdev, u32 state)
 	struct netdev_private *np = dev->priv;
 	long ioaddr = dev->base_addr;
 
-	rtnl_lock();
+
 	if (netif_running (dev)) {
 		del_timer_sync(&np->timer);
 
@@ -1683,7 +1683,7 @@ static int w840_suspend (struct pci_dev *pdev, u32 state)
 	} else {
 		netif_device_detach(dev);
 	}
-	rtnl_unlock();
+
 	return 0;
 }
 
@@ -1692,7 +1692,7 @@ static int w840_resume (struct pci_dev *pdev)
 	struct net_device *dev = pci_get_drvdata (pdev);
 	struct netdev_private *np = dev->priv;
 
-	rtnl_lock();
+
 	if (netif_device_present(dev))
 		goto out; /* device not suspended */
 	if (netif_running(dev)) {
@@ -1715,7 +1715,7 @@ static int w840_resume (struct pci_dev *pdev)
 		netif_device_attach(dev);
 	}
 out:
-	rtnl_unlock();
+
 	return 0;
 }
 #endif

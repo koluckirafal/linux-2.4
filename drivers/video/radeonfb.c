@@ -1,112 +1,23 @@
 /*
- *	drivers/video/radeonfb.c
  *	framebuffer driver for ATI Radeon chipset video boards
  *
  *	Copyright 2000	Ani Joshi <ajoshi@kernel.crashing.org>
  *
+ *	Amithlon conversion by Gary Colville (bombcrater@garycvl.f2s.com)
  *
- *	ChangeLog:
- *	2000-08-03	initial version 0.0.1
- *	2000-09-10	more bug fixes, public release 0.0.5
- *	2001-02-19	mode bug fixes, 0.0.7
- *	2001-07-05	fixed scrolling issues, engine initialization,
- *			and minor mode tweaking, 0.0.9
- *	2001-09-07	Radeon VE support, Nick Kurshev
- *			blanking, pan_display, and cmap fixes, 0.1.0
- *	2001-10-10	Radeon 7500 and 8500 support, and experimental
- *			flat panel support, 0.1.1
- *	2001-11-17	Radeon M6 (ppc) support, Daniel Berlin, 0.1.2
- *	2001-11-18	DFP fixes, Kevin Hendricks, 0.1.3
- *	2001-11-29	more cmap, backlight fixes, Benjamin Herrenschmidt
- *	2002-01-18	DFP panel detection via BIOS, Michael Clark, 0.1.4
- *	2002-06-02	console switching, mode set fixes, accel fixes
- *	2002-06-03	MTRR support, Peter Horton, 0.1.5
- *	2002-09-21	rv250, r300, m9 initial support,
- *			added mirror option, 0.1.6
- *	2003-04-10	accel engine fixes, 0.1.7
- *	2003-04-12	Mac PowerBook sleep fixes, Benjamin Herrenschmidt,
- *			0.1.8
+ *      Known bugs:
  *
- * Other change (--BenH)
- * 
- * 	2003-01-01	- Tweaks for PLL on some iBooks
- * 			- Fix SURFACE_CNTL usage on r9000	
- *      2003-03-23	- Added new Power Management code from ATI
- *      		- Added default PLL values for r300 from lkml
- *      		- Fix mirror ioctl result code (that ioctl still need some
- *      		  rework to actually use the second head)
- *      2003-03-26	- Never set TMDS_PLL_EN, it seem to break more than
- *                        just old r300's
- *      2003-04-02	- Got final word from ATI, TMDS_PLL_EN has to be flipped
- *      		  depending if we are dealing with an "RV" card or not
- *      		- Comsetic changes to sleep code, make it a bit more robust
- *      		  hopefully
- *      		- Fix 800x600-8 mode accel (Daniel Mantione)
- *      		- Fix scaling on LCDs (not yet preserving aspect ratio though)
- *      		- Properly set scroll mode to SCROLL_YREDRAW when accel
- *      		  is disabled from fbset
- *      		- Add some more radeon PCI IDs & default PLL values
- *      2003-04-05	- Update the code that retreive the panel infos from the
- *                        BIOS to match what XFree is doing
- *                      - Avoid a divide by 0 when failing to retreive those infos
- *      2003-04-07	- Fix the M6 video RAM workaround
- *      		- Some bits in the PM code were flipped, fix that.
- *      		- RB2D_DSTCACHE_MODE shouldn't be cleared on r300 (and
- *      		  maybe not on others according to a comment in XFree, but
- *      		  we keep working code for now).
- *      		- Use ROP3_S for rectangle fill
- *      2003-04-10      - Re-change the pitch workaround. We now align the pitch
- *      		  when accel is enabled for a given mode, and we don't when
- *      		  accel is disabled. That should properly deal with all cases
- *      		  and allows us to remove the "special case" accel code
- *      		- Bring in XFree workaround to not write the same value to
- *      		  the PLL (can cause blanking of some panels)
- *      		- Bring in some of Peter Horton fixes (accel reset, cleanups)
- *      		  still some more to get in though...
- *      		- Back to use of ROP3_P for rectangle fill (hrm...)
- *      2003-04-11	- Properly reset accel engine on each console switch so
- *      		  we work around switching from XFree leaving it in a weird
- *      		  state. Also extend the comparison of values causing us to
- *      		  reload the mode on console switch.
- *      2003-04-30	- For BIOS returned LCD infos, assume high sync polarity
- *      2003-07-08	- Fix an oops during boot related to disp not beeing initialized
- *      		  when modedb called us back for set_var. Remove bogus refs to
- *      		  RADEON_PM chip, this is really a mach64 chip, not a Radeon.
- *      		  Add some DFP blanking support
- *      2003-07-11	- Merged with Ani's 0.1.8 version
- *      
- *	Special thanks to ATI DevRel team for their hardware donations,
- *	and for spending the time to fix the power management code !
- *	
- *	Note: This driver in in bad need of beeing completely re-organized.
- *	      My long term plans, if I ever get enough time for that, is
- *	      to split the actual mode setting code so it can properly 
- *	      work on any head, the probe code, which will be stuffed with
- *	      OF parsing on PPC and i2c fallback (look at what XFree does)
- *	      and the PM code ought to be in a separate file. --BenH.
+ *			- Only FILL_RECT and COPY_RECT functions benefit from
+ *			  hardware acceleration. 
+ *			- DVI output non-functional on some chipsets
+ *			- Flat Panel detection is buggy.
+ *			- Hardware acceleration breaks on screen widths not a
+ *			  multiple of 64 pixels (ie, 800x600).
  *
- *
- *      Known Bugs:
- *      
- *       - Incompatible with ATI FireGL drivers. They are playing with things
- *         like MC_FB_LOCATION behind our back. Not much we can do. This is
- *         becoming a real problem as DRI is also playing with those and the
- *         GATOS CVS as well in a different way.
- *         We should really define _once for all_ the way we want those setup
- *         and do it the same way everywhere or we won't be able to keep
- *         compatibility with radeonfb.
- *         IMHO, the proper setup is what radeon_fixup_apertures() does on
- *         PPC when SET_MC_FB_FROM_APERTURE is defined (not the case currently
- *         because of compatiblity problems with DRI). This is, I think, also
- *         what GATOS does. We shall ask ATI what they do in the FireGL drivers
- *       - We don't preserve aspect ratio on scaled modes on LCDs yet
- *       - The way we retreive the BIOS informations probably doesn't work with
- *         anything but the primary card since we need a "live" BIOS image in
- *         memory to find the tables configured by the BIOS during POST stage.
  */
 
 
-#define RADEON_VERSION	"0.1.8-ben"
+#define RADEON_VERSION	"3.0.0-amt"
 
 
 #include <linux/config.h>
@@ -176,8 +87,7 @@
 #define RTRACE		if(0) printk
 #endif
 
-#define MAX_MAPPED_VRAM (2048*2048*4)
-#define MIN_MAPPED_VRAM (1024*768*1)
+
 
 enum radeon_chips {
 	RADEON_QD,
@@ -203,8 +113,6 @@ enum radeon_chips {
 	RADEON_If,
 	RADEON_Ig,
 	RADEON_Y_,
-	RADEON_Ya,
-	RADEON_Yd,
 	RADEON_Ld,
 	RADEON_Le,
 	RADEON_Lf,
@@ -219,8 +127,9 @@ enum radeon_chips {
 	RADEON_NH,
 	RADEON_NI,
 	RADEON_AP,
-	RADEON_AQ,
 	RADEON_AR,
+	RADEON_9800SE,
+	RADEON_9600,
 };
 
 enum radeon_arch {
@@ -242,47 +151,46 @@ static struct radeon_chip_info {
 	const char *name;
 	unsigned char arch;
 } radeon_chip_info[] __devinitdata = {
-	{ "QD", RADEON_R100 },
-	{ "QE", RADEON_R100 },
-	{ "QF", RADEON_R100 },
-	{ "QG", RADEON_R100 },
-	{ "VE QY", RADEON_RV100 },
-	{ "VE QZ", RADEON_RV100 },
-	{ "M7 LW", RADEON_M7 },
-	{ "M7 LX", RADEON_M7 },
-	{ "M6 LY", RADEON_M6 },
-	{ "M6 LZ", RADEON_M6 },
-	{ "8500 QL", RADEON_R200 },
-	{ "8500 QN", RADEON_R200 },
-	{ "8500 QO", RADEON_R200 },
-	{ "8500 Ql", RADEON_R200 },
-	{ "8500 BB", RADEON_R200 },
-	{ "9100 QM", RADEON_R200 },
-	{ "7500 QW", RADEON_RV200 },
-	{ "7500 QX", RADEON_RV200 },
-	{ "9000 Id", RADEON_RV250 },
-	{ "9000 Ie", RADEON_RV250 },
-	{ "9000 If", RADEON_RV250 },
-	{ "9000 Ig", RADEON_RV250 },
-	{ "9200 Y", RADEON_RV280 },
-	{ "9200 Ya", RADEON_RV280 },
-	{ "9200 Yd", RADEON_RV280 },
-	{ "M9 Ld", RADEON_M9 },
-	{ "M9 Le", RADEON_M9 },
-	{ "M9 Lf", RADEON_M9 },
-	{ "M9 Lg", RADEON_M9 },
-	{ "9700 ND", RADEON_R300 },
-	{ "9700 NE", RADEON_R300 },
-	{ "9700 NF", RADEON_R350 },
-	{ "9700 NG", RADEON_R350 },
-	{ "9700 AE", RADEON_R300 },
-	{ "9700 AF", RADEON_R300 },
-	{ "9500 AD", RADEON_R300 },
-	{ "9800 NH", RADEON_R350 },
-	{ "9800 NI", RADEON_R350 },
-	{ "9600 AP", RADEON_RV350 },
-	{ "9600 AQ", RADEON_RV350 },
-	{ "9600 AR", RADEON_RV350 },
+	{ "Radeon R100/QD", RADEON_R100 },
+	{ "Radeon R100/QE", RADEON_R100 },
+	{ "Radeon R100/QF", RADEON_R100 },
+	{ "Radeon R100/QG", RADEON_R100 },
+	{ "Radeon VE", RADEON_RV100 },
+	{ "Radeon VE", RADEON_RV100 },
+	{ "Radeon M7", RADEON_M7 },
+	{ "Radeon M7", RADEON_M7 },
+	{ "Radeon M6", RADEON_M6 },
+	{ "Radeon M6", RADEON_M6 },
+	{ "Radeon 8500 QL", RADEON_R200 },
+	{ "Radeon 8500 QN", RADEON_R200 },
+	{ "Radeon 8500 QO", RADEON_R200 },
+	{ "Radeon 8500 Ql", RADEON_R200 },
+	{ "Radeon 8500 BB", RADEON_R200 },
+	{ "Radeon 9100 QM", RADEON_R200 },
+	{ "Radeon 7500 QW", RADEON_RV200 },
+	{ "Radeon 7500 QX", RADEON_RV200 },
+	{ "Radeon 9000 Id", RADEON_RV250 },
+	{ "Radeon 9000 Ie", RADEON_RV250 },
+	{ "Radeon 9000 If", RADEON_RV250 },
+	{ "Radeon 9000 Ig", RADEON_RV250 },
+	{ "Radeon 9200 Y", RADEON_RV280 },
+	{ "Radeon M9 Ld", RADEON_M9 },
+	{ "Radeon M9 Le", RADEON_M9 },
+	{ "Radeon M9 Lf", RADEON_M9 },
+	{ "Radeon M9 Lg", RADEON_M9 },
+	{ "Radeon 9700 ND", RADEON_R300 },
+	{ "Radeon 9700 NE", RADEON_R300 },
+	{ "Radeon 9700 NF", RADEON_R350 },
+	{ "Radeon 9700 NG", RADEON_R350 },
+	{ "Radeon 9700 AE", RADEON_R300 },
+	{ "Radeon 9700 AF", RADEON_R300 },
+	{ "Radeon 9500 AD", RADEON_R300 },
+	{ "Radeon 9800 NH", RADEON_R350 },
+	{ "Radeon 9800 NI", RADEON_R350 },
+	{ "Radeon 9600 AP", RADEON_RV350 },
+	{ "Radeon 9600 AR", RADEON_RV350 },
+	{ "Radeon 9800SE ", RADEON_R350 },
+	{ "Radeon 9600 ", RADEON_RV350 },
 };
 
 
@@ -333,12 +241,11 @@ static struct pci_device_id radeonfb_pci_table[] __devinitdata = {
 	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RADEON_NH, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_NH},
 	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RADEON_NI, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_NI},
 	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RADEON_Y_, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_Y_},
-	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RADEON_Ya, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_Ya},
-	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RADEON_Yd, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_Yd},
 	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RADEON_AD, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_AD},
 	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RADEON_AP, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_AP},
-	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RADEON_AQ, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_AQ},
 	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RADEON_AR, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_AR},
+	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RADEON_9800SE, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_9800SE},
+	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RADEON_9600, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_9600},
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, radeonfb_pci_table);
@@ -499,11 +406,11 @@ struct radeonfb_info {
 	int currcon;
 	struct display *currcon_display;
 
-	struct { u8 red, green, blue, pad; } palette[256];
+	struct { u8 red, green, blue, alpha; } palette[256];
 
 	short chipset;
 	unsigned char arch;
-	unsigned int video_ram;
+	int video_ram;
 	u8 rev;
 	int pitch, bpp, depth;
 	int xres, yres, pixclock;
@@ -537,9 +444,6 @@ struct radeonfb_info {
 #if defined(FBCON_HAS_CFB16)
                 u_int16_t cfb16[16];
 #endif
-#if defined(FBCON_HAS_CFB24)
-                u_int32_t cfb24[16];
-#endif  
 #if defined(FBCON_HAS_CFB32)
                 u_int32_t cfb32[16];
 #endif  
@@ -559,7 +463,7 @@ struct radeonfb_info {
 
 
 static struct fb_var_screeninfo radeonfb_default_var = {
-        640, 480, 640, 480, 0, 0, 8, 0,
+        640, 480, 640, 480, 0, 0, 8, 1,
         {0, 6, 0}, {0, 6, 0}, {0, 6, 0}, {0, 0, 0},
         0, 0, -1, -1, 0, 39721, 40, 24, 32, 11, 96, 2,
         0, FB_VMODE_NONINTERLACED
@@ -715,7 +619,7 @@ static inline int var_to_depth(const struct fb_var_screeninfo *var)
 {
 	if (var->bits_per_pixel != 16)
 		return var->bits_per_pixel;
-	return (var->green.length == 6) ? 16 : 15;
+        return (var->green.length == 5) ? 15 : 16;
 }
 
 
@@ -724,6 +628,7 @@ static void _radeon_engine_reset(struct radeonfb_info *rinfo)
 	u32 clock_cntl_index, mclk_cntl, rbbm_soft_reset;
 	u32 host_path_cntl;
 
+	RTRACE("Radeon engine reset!\n");
 	radeon_engine_flush (rinfo);
 
     	/* Some ASICs have bugs with dynamic-on feature, which are  
@@ -871,6 +776,9 @@ static struct display_switch fbcon_radeon16;
 static struct display_switch fbcon_radeon32;
 #endif
 
+#include "amithlon.h"
+#include <asm/uaccess.h>
+
 
 /*
  * prototypes
@@ -939,7 +847,6 @@ static void radeon_pm_full_reset_sdram(struct radeonfb_info *rinfo);
 #endif /* CONFIG_PMAC_BACKLIGHT */
 
 static struct fb_ops radeon_fb_ops = {
-	owner:			THIS_MODULE,
 	fb_get_fix:		radeonfb_get_fix,
 	fb_get_var:		radeonfb_get_var,
 	fb_set_var:		radeonfb_set_var,
@@ -1389,6 +1296,7 @@ static int radeon_dfp_parse_EDID(struct radeonfb_info *rinfo)
 	printk("radeonfb: detected DFP panel size from EDID: %dx%d\n",
 		rinfo->panel_xres, rinfo->panel_yres);
 
+
 	rinfo->got_dfpinfo = 1;
 
 	return 1;
@@ -1466,6 +1374,12 @@ radeon_get_dfpinfo_BIOS(struct radeonfb_info *rinfo, unsigned char *fpbiosstart)
 
 	printk("radeonfb: detected DFP panel size from BIOS: %dx%d\n",
 		rinfo->panel_xres, rinfo->panel_yres);
+
+/*	if (rinfo->panel_xres == 0)
+	     {
+		rinfo->panel_xres = 1280;
+		rinfo->panel_xres = 1024;
+	     } */
 
 	rinfo->got_dfpinfo = 1;
 	return 1;
@@ -1630,7 +1544,6 @@ static int radeonfb_pci_register (struct pci_dev *pdev,
 				  const struct pci_device_id *ent)
 {
 	struct radeonfb_info *rinfo;
-	struct fb_info *fb_info;
 	struct radeon_chip_info *rci = &radeon_chip_info[ent->driver_data];
 	u32 tmp;
 	int i, j;
@@ -1645,7 +1558,6 @@ static int radeonfb_pci_register (struct pci_dev *pdev,
 
 	memset (rinfo, 0, sizeof (struct radeonfb_info));
 
-	fb_info = (struct fb_info *)rinfo;
 	rinfo->pdev = pdev;
 	strncpy(rinfo->name, rci->name, 16);
 	rinfo->arch = rci->arch;
@@ -1773,7 +1685,7 @@ static int radeonfb_pci_register (struct pci_dev *pdev,
 		switch (pdev->device) {
 			case PCI_DEVICE_ID_ATI_RADEON_LY:
 			case PCI_DEVICE_ID_ATI_RADEON_LZ:
-				rinfo->video_ram = 8192 * 1024;
+				rinfo->video_ram = 1024 * 1024;
 				break;
 			default:
 				break;
@@ -1830,16 +1742,8 @@ static int radeonfb_pci_register (struct pci_dev *pdev,
 		}
 	}
 
-	fb_info->mapped_vram = min_t(unsigned int, MAX_MAPPED_VRAM, rinfo->video_ram);
-	do {
-		rinfo->fb_base = (unsigned long) ioremap (rinfo->fb_base_phys,
-				  		  fb_info->mapped_vram);
-		if (rinfo->fb_base)
-			break;
-
-		fb_info->mapped_vram /= 2;
-	} while(fb_info->mapped_vram > MIN_MAPPED_VRAM);
-	
+	rinfo->fb_base = (unsigned long) ioremap (rinfo->fb_base_phys,
+				  		  rinfo->video_ram);
 	if (!rinfo->fb_base) {
 		printk ("radeonfb: cannot map FB\n");
 		iounmap ((void*)rinfo->mmio_base);
@@ -1850,7 +1754,6 @@ static int radeonfb_pci_register (struct pci_dev *pdev,
 		kfree (rinfo);
 		return -ENODEV;
 	}
-	RTRACE(KERN_INFO "radeonfb: mapped %dk videoram\n", fb_info->mapped_vram/1024);
 
 	/* currcon not yet configured, will be set by first switch */
 	rinfo->currcon = -1;
@@ -1979,6 +1882,8 @@ static int radeon_engine_init (struct radeonfb_info *rinfo)
 {
 	unsigned long temp;
 
+	RTRACE("Radeon engine init!\n");
+
 	/* disable 3D engine */
 	OUTREG(RB3D_CNTL, 0);
 
@@ -2045,6 +1950,8 @@ static int __devinit radeon_set_fbinfo (struct radeonfb_info *rinfo)
 {
 	struct fb_info *info;
 
+	RTRACE("Set FB info\n");
+
 	info = &rinfo->info;
 
 	strcpy (info->modename, rinfo->name);
@@ -2071,6 +1978,8 @@ static int __devinit radeon_init_disp (struct radeonfb_info *rinfo)
 {
         struct fb_info *info;
         struct display *disp;
+
+	RTRACE("Init disp\n");
 
         info = &rinfo->info;
         disp = &rinfo->disp;
@@ -2112,6 +2021,8 @@ static void radeon_set_dispsw (struct radeonfb_info *rinfo, struct display *disp
 {
         int accel;  
                 
+	RTRACE("Set dispsw\n");
+
         accel = disp->var.accel_flags & FB_ACCELF_TEXT;
                 
         disp->dispsw_data = NULL;
@@ -2140,7 +2051,7 @@ static void radeon_set_dispsw (struct radeonfb_info *rinfo, struct display *disp
                 case 16:
                         disp->dispsw = accel ? &fbcon_radeon16 : &fbcon_cfb16;
                         disp->dispsw_data = &rinfo->con_cmap.cfb16;
-                        disp->visual = FB_VISUAL_DIRECTCOLOR;
+                        disp->visual = FB_VISUAL_TRUECOLOR;
                         if (accel)
 				disp->line_length = (disp->var.xres_virtual * 2 + 0x3f) & ~0x3f;
 			else
@@ -2148,23 +2059,11 @@ static void radeon_set_dispsw (struct radeonfb_info *rinfo, struct display *disp
                         break;
 #endif  /* FBCON_HAS_CFB16 */
 
-#ifdef FBCON_HAS_CFB24       
-                case 24:
-                        disp->dispsw = &fbcon_cfb24;
-                        disp->dispsw_data = &rinfo->con_cmap.cfb24;
-                        disp->visual = FB_VISUAL_DIRECTCOLOR;
-                        if (accel)
-				disp->line_length = (disp->var.xres_virtual * 3 + 0x3f) & ~0x3f;
-			else
-				disp->line_length = disp->var.xres_virtual * 3;
-                        break;
-#endif /* FBCON_HAS_CFB24 */
-
 #ifdef FBCON_HAS_CFB32
                 case 32:
                         disp->dispsw = accel ? &fbcon_radeon32 : &fbcon_cfb32;
                         disp->dispsw_data = &rinfo->con_cmap.cfb32;
-                        disp->visual = FB_VISUAL_DIRECTCOLOR;
+                        disp->visual = FB_VISUAL_TRUECOLOR;
                         if (accel)
 				disp->line_length = (disp->var.xres_virtual * 4 + 0x3f) & ~0x3f;
 			else
@@ -2185,6 +2084,8 @@ static void do_install_cmap(int con, struct fb_info *info)
 {
         struct radeonfb_info *rinfo = (struct radeonfb_info *) info;
                 
+	RTRACE("Installing CMap\n");
+
         if (con != rinfo->currcon)
                 return;
                 
@@ -2214,14 +2115,13 @@ static int radeonfb_do_maximize(struct radeonfb_info *rinfo,
                 {-1, -1}
         };
         int i;
-	struct fb_info *fb_info = (struct fb_info *)rinfo;
-                
+          RTRACE("Maximise\n");      
         /* use highest possible virtual resolution */
-        if (v->xres_virtual == -1 && v->yres_virtual == -1) {
+ /*       if (v->xres_virtual == -1 && v->yres_virtual == -1) {
                 printk("radeonfb: using max available virtual resolution\n");
                 for (i=0; modes[i].xres != -1; i++) {
                         if (modes[i].xres * nom / den * modes[i].yres <
-                            fb_info->mapped_vram / 2)
+                            rinfo->video_ram / 2)
                                 break;
                 }
                 if (modes[i].xres == -1) {
@@ -2234,15 +2134,15 @@ static int radeonfb_do_maximize(struct radeonfb_info *rinfo,
                 printk("radeonfb: virtual resolution set to max of %dx%d\n",
                         v->xres_virtual, v->yres_virtual);
         } else if (v->xres_virtual == -1) {
-                v->xres_virtual = (fb_info->mapped_vram * den /   
+                v->xres_virtual = (rinfo->video_ram * den /   
                                 (nom * v->yres_virtual * 2)) & ~15;
         } else if (v->yres_virtual == -1) {
                 v->xres_virtual = (v->xres_virtual + 15) & ~15;
-                v->yres_virtual = fb_info->mapped_vram * den /
+                v->yres_virtual = rinfo->video_ram * den /
                         (nom * v->xres_virtual *2);
         } else {
                 if (v->xres_virtual * nom / den * v->yres_virtual >
-                        fb_info->mapped_vram) {
+                        rinfo->video_ram) {
                         return -EINVAL;
                 }
         }
@@ -2255,11 +2155,31 @@ static int radeonfb_do_maximize(struct radeonfb_info *rinfo,
                 return -EINVAL;
                 
         if (v->yres_virtual < v->yres)
-                return -EINVAL;
-                                
-        return 0;
+                return -EINVAL; */
+
+/*	return -EINVAL; */
+        
+                v->xres_virtual = v->xres;  
+                v->yres_virtual = v->yres;
+                        
+         return 0;
 }
                         
+static void set_palette_entry(struct radeonfb_info *rinfo, unsigned idx, unsigned red, unsigned grn, unsigned blu)
+{
+       OUTREG(PALETTE_INDEX, idx);
+       OUTREG(PALETTE_DATA, (red << 16) | (grn << 8) | blu);
+
+       udelay(1);      /* is this necessary ? */
+}
+
+static void new_reset_palette(struct radeonfb_info *rinfo)
+{
+       unsigned idx;
+
+       for(idx = 0; idx < 256; ++idx)
+               set_palette_entry(rinfo, idx, idx, idx, idx);
+}
 
 
 /*
@@ -2272,13 +2192,16 @@ static int radeonfb_get_fix (struct fb_fix_screeninfo *fix, int con,
         struct radeonfb_info *rinfo = (struct radeonfb_info *) info;
         struct display *disp;  
         
+	RTRACE("Get fix\n");
+
         disp = (con < 0) ? rinfo->info.disp : &fb_display[con];
 
         memset (fix, 0, sizeof (struct fb_fix_screeninfo));
 	sprintf (fix->id, "ATI Radeon %s", rinfo->name);
         
         fix->smem_start = rinfo->fb_base_phys;
-        fix->smem_len = rinfo->video_ram;
+        fix->smem_len = rinfo->video_ram; 
+
 
         fix->type = disp->type;
         fix->type_aux = disp->type_aux;
@@ -2321,6 +2244,7 @@ static int radeon_do_set_var (struct fb_var_screeninfo *var, int con,
         struct fb_var_screeninfo v;
         int nom, den, accel;
         unsigned chgvar = 1;
+	RTRACE("Set var\n");
 
         disp = (con < 0) ? rinfo->info.disp : &fb_display[con];
 
@@ -2349,10 +2273,7 @@ try_again:
 		case 9 ... 16:
 			v.bits_per_pixel = 16;
 			break;
-		case 17 ... 24:
-			v.bits_per_pixel = 24;
-			break;
-		case 25 ... 32:
+		case 17 ... 32:
 			v.bits_per_pixel = 32;
 			break;
 		default:
@@ -2382,7 +2303,7 @@ try_again:
                         	disp->line_length = (v.xres_virtual * 2 + 0x3f) & ~0x3f;
 			else
                         	disp->line_length = v.xres_virtual * 2;
-			disp->visual = FB_VISUAL_DIRECTCOLOR;
+                        disp->visual = FB_VISUAL_TRUECOLOR;
 			v.red.offset = 10;
 			v.green.offset = 5;
 			v.blue.offset = 0;
@@ -2396,7 +2317,7 @@ try_again:
                         	disp->line_length = (v.xres_virtual * 2 + 0x3f) & ~0x3f;
 			else
                         	disp->line_length = v.xres_virtual * 2;
-                        disp->visual = FB_VISUAL_DIRECTCOLOR;
+                        disp->visual = FB_VISUAL_TRUECOLOR;
                         v.red.offset = 11;
                         v.green.offset = 5;
                         v.blue.offset = 0;
@@ -2407,22 +2328,6 @@ try_again:
                         break;  
 #endif
                         
-#ifdef FBCON_HAS_CFB24
-                case 24:
-                        nom = 4;
-                        den = 1;
-			if (accel)
-                        	disp->line_length = (v.xres_virtual * 3 + 0x3f) & ~0x3f;
-			else
-                        	disp->line_length = v.xres_virtual * 3;
-                        disp->visual = FB_VISUAL_DIRECTCOLOR;
-                        v.red.offset = 16;
-                        v.green.offset = 8;
-                        v.blue.offset = 0;
-                        v.red.length = v.blue.length = v.green.length = 8;
-                        v.transp.offset = v.transp.length = 0;
-                        break;
-#endif
 #ifdef FBCON_HAS_CFB32
                 case 32:
                         nom = 4;
@@ -2432,6 +2337,7 @@ try_again:
 			else
                         	disp->line_length = v.xres_virtual * 4;
                         disp->visual = FB_VISUAL_DIRECTCOLOR;
+                        disp->visual = FB_VISUAL_TRUECOLOR;
                         v.red.offset = 16;
                         v.green.offset = 8;
                         v.blue.offset = 0;
@@ -2445,9 +2351,6 @@ try_again:
                                 var->xres, var->yres, var->bits_per_pixel);
                         return -EINVAL;
         }
-
-	if (((v.xres_virtual * v.yres_virtual * nom) / den) > info->mapped_vram)
-		return -EINVAL;
 
         if (radeonfb_do_maximize(rinfo, var, &v, nom, den) < 0)
                 return -EINVAL;  
@@ -2487,6 +2390,8 @@ try_again:
 
         if (real)
         	radeon_load_video_mode (rinfo, &v);
+        if( v.bits_per_pixel > 8)
+               new_reset_palette(rinfo);
 	if (accel && real) {
 		if (radeon_engine_init(rinfo) < 0) {
                         var->accel_flags &= ~FB_ACCELF_TEXT;
@@ -2525,6 +2430,8 @@ static int radeonfb_get_cmap (struct fb_cmap *cmap, int kspc, int con,
         struct radeonfb_info *rinfo = (struct radeonfb_info *) info;
         struct display *disp;
                 
+	RTRACE("Get CMap\n");
+
         disp = (con < 0) ? rinfo->info.disp : &fb_display[con];
         
         if (con == rinfo->currcon) {
@@ -2547,6 +2454,8 @@ static int radeonfb_set_cmap (struct fb_cmap *cmap, int kspc, int con,
         struct radeonfb_info *rinfo = (struct radeonfb_info *) info;
         struct display *disp;
         unsigned int cmap_len;
+
+	RTRACE("Set CMap\n");
                 
         disp = (con < 0) ? rinfo->info.disp : &fb_display[con];
   
@@ -2568,15 +2477,17 @@ static int radeonfb_set_cmap (struct fb_cmap *cmap, int kspc, int con,
 
 
 
-static int radeonfb_pan_display (struct fb_var_screeninfo *var, int con,
+/*static int radeonfb_pan_display (struct fb_var_screeninfo *var, int con,
                                  struct fb_info *info)
 {
         struct radeonfb_info *rinfo = (struct radeonfb_info *) info;
+
+	RTRACE("Panning display\n");
                         
         if (((var->xoffset + var->xres) > var->xres_virtual)
             || ((var->yoffset + var->yres) > var->yres_virtual))
                return -EINVAL;
-                        
+                       
         if (rinfo->asleep)
                 return 0;
 
@@ -2584,8 +2495,48 @@ static int radeonfb_pan_display (struct fb_var_screeninfo *var, int con,
                              * var->bits_per_pixel / 8) & ~7);
                 
         return 0;
+} */
+
+static int radeonfb_pan_display (struct fb_var_screeninfo *var, int con,
+                                 struct fb_info *info)
+{
+        struct radeonfb_info *rinfo = (struct radeonfb_info *) info;
+        u32 offset, xoffset, yoffset;
+                
+        xoffset = (var->xoffset + 7) & ~7;
+        yoffset = var->yoffset;
+#if 0                
+        if ((xoffset + var->xres > var->xres_virtual) || (yoffset+var->yres >
+                var->yres_virtual))
+                return -EINVAL;
+#endif                
+        offset = ((yoffset * var->xres + xoffset) * var->bits_per_pixel) >> 6;
+         
+//        OUTREG(CRTC_OFFSET, offset);
+        OUTREG(CRTC_OFFSET, ((var->yoffset * var->xres_virtual + var->xoffset)
+                             * var->bits_per_pixel / 8) & ~7);
+        
+        return 0;
 }
 
+
+static void fbcon_radeon_bmove_amy(struct radeonfb_info *rinfo, int srcy, int srcx,
+			       int dsty, int dstx, int height, int width);
+int radeon_rectcopy_complete(struct radeonfb_info *rinfo, 
+			   int sy, int sx, 
+			   int dy, int dx,
+			   int height, int width,
+			   int spitch, int dpitch,
+			   int op,
+			   int oldpitch, int Bpp);
+
+static void radeon_rectfill(struct radeonfb_info *rinfo,
+			    int dsty, int dstx,
+			    int height, int width,
+			    u32 clr);
+
+static void radeon_drawline(struct radeonfb_info *rinfo,
+			     int sy, int sx, int dy, int dx, u32 clr);
 
 static int radeonfb_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
                            unsigned long arg, int con, struct fb_info *info)
@@ -2596,9 +2547,73 @@ static int radeonfb_ioctl (struct inode *inode, struct file *file, unsigned int 
 	int rc;
 
 	switch (cmd) {
-		/*
-		 * TODO:  set mirror accordingly for non-Mobility chipsets with 2 CRTC's
-		 */
+	 case AMITHLON_FILL_RECT: 
+		{
+	     		amithlon_fill af;
+	     		if (copy_from_user(&af, (void *) arg, sizeof(af)))
+		 		return -EFAULT;
+	     		radeon_rectfill(rinfo,
+			af.sy,
+			af.sx,
+			af.height,
+			af.width,
+			af.colour);
+	     		return 0;
+		}
+	 case AMITHLON_COPY_RECT: 
+		{ 
+	   		amithlon_copy ac;
+	     		if (copy_from_user(&ac, (void *) arg, sizeof(ac)))
+		 		return -EFAULT;
+	     		fbcon_radeon_bmove_amy(rinfo,
+			ac.sy,
+			ac.sx,
+			ac.dy,
+			ac.dx,
+			ac.height,
+			ac.width);
+	     		return 0;
+		}
+/*	case AMITHLON_COPY_RECT_COMPLETE: 
+	  {
+		    amithlon_copy_complete acr;
+		    int answer;
+		    if (copy_from_user(&acr, (void *) arg, sizeof(acr)))
+			      return -EFAULT;
+		    answer=radeon_rectcopy_complete(rinfo,
+					  acr.sy,
+					  acr.sx,
+					  acr.dy,
+					  acr.dx,
+					  acr.height,
+					  acr.width,
+					  acr.spitch,
+					  acr.dpitch,
+					  acr.op,
+					  acr.oldpitch,
+					  acr.Bpp);
+		    return answer;
+          } */
+		case AMITHLON_DRAW_LINE: {
+	  		amithlon_line al;
+	        	if (copy_from_user(&al, (void *) arg, sizeof(al)))
+	 			return -EFAULT;
+     			radeon_drawline(rinfo,
+					al.sy,
+					al.sx,
+					al.dy,
+					al.dx,
+					al.colour);
+     			return 0; 
+		}
+	case AMITHLON_MAXCLOCK:
+	  {
+	    unsigned int answer=240000;
+
+	    if (put_user(answer, (u_int32_t*)arg))
+	      return -EFAULT;
+	    return 0;
+	  }
 		case FBIO_RADEON_SET_MIRROR:
 			switch (rinfo->arch) {
 				case RADEON_M6:
@@ -2672,10 +2687,17 @@ static int radeonfb_switch (int con, struct fb_info *info)
         struct radeonfb_info *rinfo = (struct radeonfb_info *) info;
         struct display *disp, *old_disp;
         struct fb_cmap *cmap;
-        int switchmode = 0;
+        int switchmode = 1;
         
+	RTRACE("== Going in ==\n");
+	RTRACE("FBbase : %d  FBLocBase : %d\n",rinfo->fb_base, rinfo->fb_local_base);
+	RTRACE("FB Phys: %d\n",rinfo->fb_base_phys);
+	RTRACE("Bpp: %d  Depth: %d \n", rinfo->bpp, rinfo->depth);
+	RTRACE("X: %d  Y:%d \n", rinfo->xres, rinfo->yres);
+	RTRACE("Screen Base: %d\n",rinfo->disp.screen_base);
+
         disp = (con < 0) ? rinfo->info.disp : &fb_display[con];
-        old_disp = rinfo->currcon_display;
+        old_disp = rinfo->currcon_display; 
                 
         if (rinfo->currcon >= 0) {
                 cmap = &(rinfo->currcon_display->cmap);
@@ -2701,19 +2723,24 @@ try_again:
 	rinfo->currcon = con;
 	rinfo->currcon_display = disp;
 	disp->var.activate = FB_ACTIVATE_NOW;
-        
-        if (switchmode) {
+     
+        if (switchmode) { 
                 radeonfb_set_var (&disp->var, con, info);
                 do_install_cmap(con, info);
-        } else {
-		if (radeon_engine_init(rinfo) < 0) {
+        } else { 
+		if (radeon_engine_init(rinfo) < 0) { 
                         disp->var.accel_flags &= ~FB_ACCELF_TEXT;
                         switchmode = 1;
 			goto try_again;
 		}
-        }
+        }  
 
         radeon_set_dispsw (rinfo, disp);
+
+	RTRACE("== Going out ==\n");
+	RTRACE("FBbase : %d  FBLocBase : %d\n",rinfo->fb_base, rinfo->fb_local_base);
+	RTRACE("Bpp: %d  Depth: %d \n", rinfo->bpp, rinfo->depth);
+	RTRACE("X: %d  Y:%d \n", rinfo->xres, rinfo->yres);
 
         return 0;
 }
@@ -2809,11 +2836,11 @@ static int radeon_getcolreg (unsigned regno, unsigned *red, unsigned *green,
 	
 	if (regno > 255)
 		return 1;
-     
- 	*red = (rinfo->palette[regno].red<<8) | rinfo->palette[regno].red; 
-    	*green = (rinfo->palette[regno].green<<8) | rinfo->palette[regno].green;
-    	*blue = (rinfo->palette[regno].blue<<8) | rinfo->palette[regno].blue;
-    	*transp = 0;
+
+        *red    = (unsigned) rinfo->palette[regno].red << 8;
+        *green  = (unsigned) rinfo->palette[regno].green << 8;
+        *blue   = (unsigned) rinfo->palette[regno].blue << 8;
+        *transp = (unsigned) rinfo->palette[regno].alpha << 8;
 
 	return 0;
 }                            
@@ -2821,23 +2848,22 @@ static int radeon_getcolreg (unsigned regno, unsigned *red, unsigned *green,
 
 
 static int radeon_setcolreg (unsigned regno, unsigned red, unsigned green,
-                             unsigned blue, unsigned transp, struct fb_info *info)
+                             unsigned blue, unsigned alpha, struct fb_info *info)
 {
         struct radeonfb_info *rinfo = (struct radeonfb_info *) info;
-	u32 pindex;
 
 	if (regno > 255)
 		return 1;
 
-	red >>= 8;
-	green >>= 8;
-	blue >>= 8;
-	rinfo->palette[regno].red = red;
-	rinfo->palette[regno].green = green;
-	rinfo->palette[regno].blue = blue;
+       red     >>= 8;
+       green   >>= 8;
+       blue    >>= 8;
+       alpha   >>= 8;
 
-        /* default */
-        pindex = regno;
+       rinfo->palette[regno].red       = red;
+       rinfo->palette[regno].green     = green;
+       rinfo->palette[regno].blue      = blue;
+       rinfo->palette[regno].alpha     = alpha;
 
         if (!rinfo->asleep) {
         	u32 dac_cntl2, vclk_cntl;
@@ -2852,62 +2878,35 @@ static int radeon_setcolreg (unsigned regno, unsigned red, unsigned green,
 			OUTREG(DAC_CNTL2, dac_cntl2);
 		}
 
-		if (rinfo->bpp == 16) {
-			pindex = regno * 8;
+		if (rinfo->bpp == 8) {
+                set_palette_entry(rinfo, regno, red, green, blue);
+                return 0;
+    		 }
 
-			if (rinfo->depth == 16 && regno > 63)
-				return 1;
-			if (rinfo->depth == 15 && regno > 31)
-				return 1;
+	       if(regno > 15)
+ 	              return 1;
 
-			/* For 565, the green component is mixed one order below */
-			if (rinfo->depth == 16) {
-		                OUTREG8(PALETTE_INDEX, pindex>>1);
-	       	         	OUTREG(PALETTE_DATA, (rinfo->palette[regno>>1].red << 16) |
-	                        	(green << 8) | (rinfo->palette[regno>>1].blue));
-	                	green = rinfo->palette[regno<<1].green;
-	        	}
-		}
+  	       if(rinfo->bpp == 32) {
 
-		if (rinfo->depth != 16 || regno < 32) {
-			OUTREG8(PALETTE_INDEX, pindex);
-			OUTREG(PALETTE_DATA, (red << 16) | (green << 8) | blue);
+   	             rinfo->con_cmap.cfb32[regno] = (red << 16) | (green << 8) | blue;
+    	             return 0;
 		}
 
 		OUTPLL(VCLK_ECP_CNTL, vclk_cntl);
 	}
- 	if (regno < 16) {
-        	switch (rinfo->depth) {
-#ifdef FBCON_HAS_CFB16
-		        case 15:
-        			rinfo->con_cmap.cfb16[regno] = (regno << 10) | (regno << 5) |
-				                       	 	  regno;   
-			        break;
-		        case 16:
-        			rinfo->con_cmap.cfb16[regno] = (regno << 11) | (regno << 5) |
-				                       	 	  regno;   
-			        break;
-#endif
-#ifdef FBCON_HAS_CFB24   
-                        case 24:
-                                rinfo->con_cmap.cfb24[regno] = (regno << 16) | (regno << 8) | regno;
-                                break;
-#endif
-#ifdef FBCON_HAS_CFB32
-	        	case 32: {
-            			u32 i;    
-   
-  		       		i = (regno << 8) | regno;
-            			rinfo->con_cmap.cfb32[regno] = (i << 16) | i;
-		        	break;
-        		}
-#endif
-                }
-        }
+        red     >>= 3;
+        green   >>= 2;
+        blue    >>= 3;
+ 
+        if(rinfo->depth == 15)
+                green >>= 1;
+        else
+                red <<= 1;
+  
+        rinfo->con_cmap.cfb16[regno] = (red << 10) | (green << 5) | blue;
+
         return 0;
-
 }
-
 
 static void radeon_save_state (struct radeonfb_info *rinfo,
                                struct radeon_regs *save)
@@ -3028,6 +3027,8 @@ static void radeon_load_video_mode (struct radeonfb_info *rinfo,
 	vTotal = vSyncEnd + mode->upper_margin;
 	pixClock = mode->pixclock;
 	
+	RTRACE("Load video mode\n");
+
 	if ((primary_mon == MT_DFP) || (primary_mon == MT_LCD)) {
                 /* Force the native video mode of the LCD monitor.
                  * This is complicated, because when the hardware
@@ -3181,6 +3182,7 @@ static void radeon_load_video_mode (struct radeonfb_info *rinfo,
 
 	rinfo->bpp = mode->bits_per_pixel;
 	rinfo->depth = depth;
+	printk("Radeon BPP: %d\n",rinfo->bpp);
 
 	RTRACE("pixclock = %lu\n", (unsigned long)pixClock);
 	RTRACE("freq = %lu\n", (unsigned long)freq);
@@ -4453,6 +4455,68 @@ static void fbcon_radeon_bmove(struct display *p, int srcy, int srcx,
 	radeon_engine_idle();
 }
 
+static void fbcon_radeon_bmove_amy(struct radeonfb_info *rinfo, int srcy, int srcx,
+			       int dsty, int dstx, int height, int width)
+{
+	//struct radeonfb_info *rinfo = (struct radeonfb_info *)(p->fb_info);
+	u32 dp_cntl = DST_LAST_PEL;
+	u32 dp_cntl_save = 0;
+
+
+	if (srcy < dsty) {
+		srcy += height - 1;
+		dsty += height - 1;
+	} else
+		dp_cntl |= DST_Y_TOP_TO_BOTTOM;
+
+	if (srcx < dstx) {
+		srcx += width - 1;
+		dstx += width - 1;
+	} else
+		dp_cntl |= DST_X_LEFT_TO_RIGHT;
+
+	dp_cntl_save = INREG(DP_CNTL);
+
+	radeon_fifo_wait(6);
+	OUTREG(DP_GUI_MASTER_CNTL, (rinfo->dp_gui_master_cntl |
+				    GMC_BRUSH_NONE |
+				    GMC_SRC_DATATYPE_COLOR |
+				    ROP3_S |
+				    DP_SRC_SOURCE_MEMORY));
+	OUTREG(DP_WRITE_MSK, 0xffffffff);
+	OUTREG(DP_CNTL, dp_cntl);
+	OUTREG(SRC_Y_X, (srcy << 16) | srcx);
+	OUTREG(DST_Y_X, (dsty << 16) | dstx);
+	OUTREG(DST_HEIGHT_WIDTH, (height << 16) | width);
+
+	radeon_fifo_wait(1);
+	OUTREG(DP_CNTL, dp_cntl_save);
+
+	radeon_engine_idle();
+}
+
+
+
+
+static void radeon_drawline(struct radeonfb_info *rinfo,
+			     int sy, int sx, int dy, int dx, u32 clr)
+{
+	radeon_fifo_wait(4);
+	OUTREG(DP_GUI_MASTER_CNTL, (rinfo->dp_gui_master_cntl |
+		GMC_CLR_CMP_CNTL_DIS |
+		GMC_SRC_DATATYPE_COLOR |
+		GMC_BRUSH_SOLID_COLOR |
+		ROP3_PATCOPY));
+	OUTREG(DP_BRUSH_BKGD_CLR, clr);
+	OUTREG(DP_BRUSH_FRGD_CLR, clr);
+	OUTREG(DP_WRITE_MSK, 0xffffffff);
+
+	radeon_fifo_wait(2);
+	OUTREG(DST_LINE_START, (sy<<16)|(sx & 0xffff));
+	OUTREG(DST_LINE_END, (dy<<16)|(dx & 0xffff));
+	radeon_engine_idle();
+		
+}
 
 
 static void radeon_rectfill(struct radeonfb_info *rinfo,
@@ -4503,7 +4567,7 @@ static struct display_switch fbcon_radeon8 = {
 	bmove:			fbcon_radeon_bmove,
 	clear:			fbcon_radeon8_clear,
 	putc:			fbcon_cfb8_putc,
-	putcs:			fbcon_cfb8_putcs,
+	putcs:			fbcon_cfb8_putc,
 	revc:			fbcon_cfb8_revc,
 	clear_margins:		fbcon_cfb8_clear_margins,
 	fontwidthmask:		FONTWIDTH(4)|FONTWIDTH(8)|FONTWIDTH(12)|FONTWIDTH(16)
@@ -4576,4 +4640,40 @@ static struct display_switch fbcon_radeon32 = {
 	fontwidthmask:		FONTWIDTH(4)|FONTWIDTH(8)|FONTWIDTH(12)|FONTWIDTH(16)
 };
 #endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

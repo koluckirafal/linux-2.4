@@ -389,7 +389,7 @@
 #define RADEON_BIOS_5_SCRATCH		       0x0024
 #define RADEON_BIOS_6_SCRATCH		       0x0028
 #define RADEON_BIOS_7_SCRATCH		       0x002c
-
+#define HDP_SOFT_RESET                             (1 << 26)
 #define TV_DAC_CNTL                            0x088c
 #define GPIOPAD_MASK                           0x0198
 #define GPIOPAD_A                              0x019c

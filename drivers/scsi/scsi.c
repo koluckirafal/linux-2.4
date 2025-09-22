@@ -2355,7 +2355,7 @@ static int scsi_register_device_module(struct Scsi_Device_Template *tpnt)
 	 * If any of the devices would match this driver, then perform the
 	 * init function.
 	 */
-	if (tpnt->init && tpnt->dev_noticed) {
+	if (tpnt->init) {
 		if ((*tpnt->init) ()) {
 			for (shpnt = scsi_hostlist; shpnt;
 			     shpnt = shpnt->next) {

@@ -66,6 +66,7 @@ static DECLARE_MUTEX(misc_sem);
 static unsigned char misc_minors[DYNAMIC_MINORS / 8];
 
 extern int psaux_init(void);
+extern int mkbd_init(void);
 extern int rtc_DP8570A_init(void);
 extern int rtc_MK48T08_init(void);
 extern int ds1286_init(void);
@@ -256,6 +257,9 @@ int __init misc_init(void)
 #endif
 #ifdef CONFIG_BVME6000
 	rtc_DP8570A_init();
+#endif
+#ifdef CONFIG_MKBD
+	mkbd_init();
 #endif
 #ifdef CONFIG_SGI_DS1286
 	ds1286_init();

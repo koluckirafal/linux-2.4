@@ -23,7 +23,8 @@ obj-y	 += mem.o tty_io.o n_tty.o tty_ioctl.o raw.o pty.o misc.o random.o
 
 export-objs     :=	busmouse.o console.o keyboard.o sysrq.o \
 			misc.o pty.o random.o selection.o serial.o \
-			sonypi.o tty_io.o tty_ioctl.o generic_serial.o \
+			tty_io.o magic_kbd.o pc_keyb.o irq.o \
+			sonypi.o tty_ioctl.o generic_serial.o \
 			au1000_gpio.o vac-serial.o hp_psaux.o nvram.o \
 			scx200.o fetchop.o
 
@@ -251,6 +252,8 @@ obj-$(CONFIG_MK712_MOUSE) += mk712.o
 obj-$(CONFIG_RTC) += rtc.o
 obj-$(CONFIG_GEN_RTC) += genrtc.o
 obj-$(CONFIG_EFI_RTC) += efirtc.o
+obj-$(CONFIG_MKBD) += magic_kbd.o
+obj-y += irq.o
 obj-$(CONFIG_SGI_DS1286) += ds1286.o
 obj-$(CONFIG_MIPS_RTC) += mips_rtc.o
 obj-$(CONFIG_SGI_IP27_RTC) += ip27-rtc.o

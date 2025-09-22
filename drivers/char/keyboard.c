@@ -958,9 +958,9 @@ int __init kbd_init(void)
 		kbd_table[i] = kbd0;
 
 	ttytab = console_driver.table;
-
+#if 0
 	kbd_init_hw();
-
+#endif
 	tasklet_enable(&keyboard_tasklet);
 	tasklet_schedule(&keyboard_tasklet);
 	

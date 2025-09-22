@@ -170,7 +170,15 @@ if [ "$CONFIG_ZISOFS" = "y" ]; then
 else
    define_tristate CONFIG_ZISOFS_FS n
 fi
-
+if [ "$CONFIG_CRAMFS" = "y" -o "$CONFIG_ZISOFS_FS" = "y" ]; then
+   define_tristate CONFIG_ZLIB_FS_INFLATE y
+else
+  if [ "$CONFIG_CRAMFS" = "m" -o "$CONFIG_ZISOFS_FS" = "m" ]; then
+     define_tristate CONFIG_ZLIB_FS_INFLATE m
+  else
+     define_tristate CONFIG_ZLIB_FS_INFLATE n
+  fi
+fi
 mainmenu_option next_comment
 comment 'Partition Types'
 source fs/partitions/Config.in

@@ -62,6 +62,7 @@ extern int get_exec_domain_list(char *);
 extern int get_irq_list(char *);
 #endif
 extern int get_dma_list(char *);
+extern int get_mkbd_status (char *);
 extern int get_locks_status (char *, char **, off_t, int);
 extern int get_swaparea_info (char *);
 #ifdef CONFIG_SGI_DS1286
@@ -221,7 +222,8 @@ static int version_read_proc(char *page, char **start, off_t off,
 	extern char *linux_banner;
 	int len;
 
-	strcpy(page, linux_banner);
+/*	strcpy(page, linux_banner); */
+	strcpy(page, "Amithlon kernel version 4 (2.4.37.9). Compiled June, 2010. Maintained by Milan M. (milanca@gmail.com).");
 	len = strlen(page);
 	return proc_calc_metrics(page, start, off, count, eof, len);
 }
@@ -457,6 +459,20 @@ static int cmdline_read_proc(char *page, char **start, off_t off,
 	return proc_calc_metrics(page, start, off, count, eof, len);
 }
 
+#ifdef CONFIG_MKBD
+static int mkbd_read_proc(char *page, char **start, off_t off,
+			  int count, int *eof, void *data)
+{
+	int len = get_mkbd_status(page);
+	if (len <= off+count) *eof = 1;
+	*start = page + off;
+	len -= off;
+	if (len>count) len = count;
+	if (len<0) len = 0;
+	return len;
+}
+#endif
+
 #ifdef CONFIG_SGI_DS1286
 static int ds1286_read_proc(char *page, char **start, off_t off,
 				 int count, int *eof, void *data)
@@ -616,6 +632,9 @@ void __init proc_misc_init(void)
 		{"filesystems",	filesystems_read_proc},
 		{"dma",		dma_read_proc},
 		{"cmdline",	cmdline_read_proc},
+#ifdef CONFIG_MKBD
+		{"mkbd",	mkbd_read_proc},
+#endif
 #ifdef CONFIG_SGI_DS1286
 		{"rtc",		ds1286_read_proc},
 #endif
