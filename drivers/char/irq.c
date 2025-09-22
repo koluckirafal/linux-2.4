@@ -10,6 +10,8 @@
 */
 
 
+#include <linux/types.h>
+
 #ifndef __KERNEL__
 # error This is a Linux kernel device driver
 #endif
@@ -26,13 +28,20 @@
 
 #include <linux/config.h>
 
-#ifdef			 MODULE
+//#ifdef			 MODULE
 # include <linux/module.h>
-#endif
+//#endif
 
 #if defined(MODVERSIONS) && defined(CONFIG_IRQ_EXPORT_SIMULATE) && !defined(__GENKSYMS__)
 # include "irq.ver"
 #endif
+
+#include <linux/mm.h>
+#include <linux/mm.h>
+#include <linux/errno.h>
+#include <linux/file.h>
+#include <linux/smp_lock.h>
+#include <linux/highuid.h>
 
 #include <linux/compat/uaccess.h>
 #include <linux/compat/init.h>
@@ -56,11 +65,70 @@
 #include <linux/df/save_flags_and_cli.h>
 #include <linux/df/strdup.h>
 
+#include <asm/io.h>
+#include <asm/system.h>
+
 #include "./irq.h"						// API definitions
+
+#include "amithlon_pci.h"
 
 #define REGPARM(n) __attribute__(( regparm(n) ))
 
 #define UNUSED __attribute__(( unused ))
+
+
+/* UAE memory blocks. Why here, you ask? Because it's easy. */
+typedef struct {
+  int start;
+  int end;
+} range;
+
+#define UAE_BLOCKS_N 16
+static range uae_blocks[UAE_BLOCKS_N];
+static int blockindex=0;
+
+extern unsigned long process_to_elevate;
+extern int do_elevate_process;
+extern unsigned long zeropage;
+
+void add_uae_block(int start, int end)
+{
+  if (blockindex==UAE_BLOCKS_N)
+    return;
+  uae_blocks[blockindex].start=start;
+  uae_blocks[blockindex].end=end;
+  blockindex++;
+}
+
+/* UAE fast page fault handling */
+
+static fpf_data fpf;
+static unsigned long fpf_eip;
+
+int uae_handle_fault(struct pt_regs *regs, unsigned long error_code,
+		     unsigned long address)
+{
+  error_code=5;
+  if (current==fpf.task && 
+      address==fpf.addr &&
+      fpf.handler &&
+      (error_code&1) &&  /* protection fault, rather than page fault */
+      (error_code&4)) {  /* In user mode */
+    /* Do it */
+    unsigned long x;
+    fpf_eip=regs->eip;
+    if (COPY_FROM_USER(&x,(const void*)(fpf_eip+6), sizeof(x)))
+      return 0;
+    regs->eip=x;
+    return 1;
+  }
+  return 0;
+}
+
+/* UAE high precision timers. Kludge in here like nothing you ever dreamt of */
+unsigned long long uae_alert=~0; /* When to start checking timers */
+unsigned long long uae_nextevent=~0; /* When to next trigger */
+
 
 
 //==== declarations ====================================================
@@ -115,6 +183,345 @@ static uint trace_count=0;
 	} while(0)
 #endif
 
+/***************** PCI handling ****************************************/
+
+#define PCI_MINOR 255
+
+typedef struct pci_list_t {
+  struct pci_dev* dev;
+  unsigned char* releasecode;
+  char* name;
+  struct pci_list_t* next;
+  struct pci_list_t** prev_p;
+} pci_list;
+
+pci_list* devlist=NULL;
+
+
+static int find_code_size(unsigned char* ud)
+{
+  int size=0;
+
+  while (1) {
+    unsigned char c;
+    COPY_FROM_USER(&c,ud+size+2,1);
+    switch(c) {
+    case 0xa0: size+=4; break;
+    case 0xe0: size+=6; break;
+    case 0x90: size+=4; break;
+    case 0xd0: size+=6; break;
+    case 0x80: size+=6; break;
+    case 0xc0: size+=8; break;
+    default: return size;
+    }
+    size+=2;
+  }
+}
+
+u32 dummy=0;
+
+static void execute_release_code(pci_list* x)
+{
+  int pos;
+  u8* releasecode;
+
+  if (!x->releasecode)
+    return;
+  pos=0;
+  releasecode=x->releasecode;
+
+  cli();
+  while (1) {
+    int basenum=releasecode[pos];
+    int type=releasecode[pos+2];
+    unsigned int base=x->dev->resource[basenum].start;
+    int io=(x->dev->resource[basenum].flags&1);
+    unsigned int offset;
+    unsigned int val;
+    int len;
+    unsigned int i;
+    int op=releasecode[pos+1];
+
+    pos+=2; /* skip base/op */
+    if (type&0x40) {
+      offset=((u32)releasecode[pos+2]<<8)|
+	((u32)releasecode[pos+3]<<0);
+      pos+=2;
+    }
+    else {
+      offset=releasecode[pos+1];
+    }      
+    pos+=2; /* skip type/offset */
+    switch(type) {
+    case 0x80:
+    case 0xc0: len=4; break;
+    case 0x90:
+    case 0xd0: len=2; break;
+    case 0xa0:
+    case 0xe0: len=1; break;
+    default:
+      sti();
+      return;
+    }
+    val=0;
+    for (i=0;i<len;i++)
+      val=(val<<8)+releasecode[pos+i];
+
+    printk("op %d: base %x, offset %x, val %x, io=%d, len=%d\n",op,base,offset,val,io,len);
+
+    switch(op) {
+    case 0x00: 
+      {/* write */
+	if (io) {
+	  switch(len) {
+	  case 4: outl(val,base+offset); break;
+	  case 2: outw(val,base+offset); break;
+	  case 1: outb(val,base+offset); break;
+	  }
+	}
+	else { /* memory */
+	  unsigned long paddr=(unsigned long)bus_to_virt(base+offset);
+	  void* addr=ioremap(paddr,4);
+
+	  switch(len) {
+	  case 4: *((u32*)addr)=val; break;
+	  case 2: *((u16*)addr)=val; break;
+	  case 1: *((u8*)addr)=val; break;
+	  }
+	  iounmap(addr);
+	}
+      }
+      break;
+
+    case 0x01: 
+      { /* read */
+	if (io) {
+	  switch(len) {
+	  case 4: dummy+=inl(base+offset); break;
+	  case 2: dummy+=inw(base+offset); break;
+	  case 1: dummy+=inb(base+offset); break;
+	  }
+	}
+	else { /* memory */
+	  unsigned long paddr=(unsigned long)bus_to_virt(base+offset);
+	  void* addr=ioremap(paddr,4);
+
+	  switch(len) {
+	  case 4: dummy+=*((u32*)addr); break;
+	  case 2: dummy+=*((u16*)addr); break;
+	  case 1: dummy+=*((u8*)addr); break;
+	  }
+	  iounmap(addr);
+	}
+      }
+      break;
+
+    case 0x02: 
+      { /* sleep */
+	for (i=0;i<val;i++)
+	  outb(0,0x80);
+      }
+      break;
+
+    default:
+      break;
+    }
+    
+    if (len==1)
+      pos+=2;
+    else
+      pos+=len;
+  }
+  sti();
+}
+
+static void release_device(struct pci_dev* dev, int runcode)
+{
+  pci_list* l=devlist;
+
+  while (l && l->dev!=dev)
+    l=l->next;
+  if (!l)
+    return;
+  if (runcode)
+    execute_release_code(l);
+  pci_release_regions(l->dev);
+
+  if (l->next)
+    l->next->prev_p=l->prev_p;
+  *(l->prev_p)=l->next;
+  kfree(l->name);
+  if (l->releasecode)
+    kfree(l->releasecode);
+  kfree(l);
+}
+
+static void release_all_devices(void)
+{
+  pci_list* l=devlist;
+
+  while (l) {
+    pci_list* next=l->next;
+
+    release_device(l->dev,1);
+    l=next;
+  }
+}
+
+static int pcicommand(pcidata* x)
+{
+  struct pci_dev* sh=(struct pci_dev*)x->starthandle;
+
+  switch(x->command) {
+  case CMD_FIND_SLOT:
+    x->handle=(unsigned long)pci_find_slot(x->busnum,
+					   PCI_DEVFN(x->devnum,x->funnum));
+    return 0;
+  case CMD_FIND_SUBSYS:
+    x->handle=(unsigned long)pci_find_subsys(x->vendor,
+					     x->device,
+					     x->subsys_vendor,
+					     x->subsys_device,
+					     sh);
+    return 0;
+  case CMD_FIND_DEVICE:
+    x->handle=(unsigned long)pci_find_device(x->vendor,
+					     x->device,
+					     sh);
+    return 0;
+  case CMD_FIND_CLASS:
+    x->handle=(unsigned long)pci_find_class(x->class,
+					    sh);
+    return 0;
+  case CMD_FIND_CAPAB:
+    x->cappos=pci_find_capability(sh,
+				  x->capability);
+    return 0;
+  case CMD_SET_POWER:
+    x->oldpowerstate=pci_set_power_state(sh,
+					 x->powerstate);
+    return 0;
+  case CMD_ENABLE:
+    x->result=pci_enable_device(sh);
+    return 0;
+  case CMD_DISABLE:
+    pci_disable_device(sh);
+    return 0;
+  case CMD_RELEASE:
+    release_device(sh,0);
+    return 0;
+  case CMD_REQUEST:
+    {
+      char* name;
+      
+      if (x->res_name) {
+	int len;
+	char c;
+	int i;
+
+	len=0;
+	while (!COPY_FROM_USER(&c, x->res_name+len,1)) {
+	  if (!c)
+	    break;
+	  len++;
+	}
+	name=kmalloc(len+1,GFP_KERNEL);
+	for (i=0;i<len;i++) {
+	  name[i]=0;
+	  COPY_FROM_USER(name+i, x->res_name+i,1);
+	}
+	name[i]=0;
+      }
+      else {
+	name=kmalloc(22,GFP_KERNEL);
+	strcpy(name,"amithlon pci system");
+      }
+
+      x->result=pci_request_regions(sh,name);
+      if (!x->result) { /* Successful */
+	pci_list* n=kmalloc(sizeof(pci_list),GFP_KERNEL);
+	n->dev=sh;
+	if (x->releasecode) {
+	  int size=find_code_size(x->releasecode);
+	  n->releasecode=kmalloc(size,GFP_KERNEL);
+	  COPY_FROM_USER(n->releasecode,x->releasecode,size);
+	}
+	else 
+	  n->releasecode=NULL;
+	n->name=name;
+	n->next=devlist;
+	n->prev_p=&devlist;
+	if (devlist)
+	  devlist->prev_p=&(n->next);
+	devlist=n;
+      }
+      else {
+	kfree(name);
+      }
+    }
+    return 0;
+    
+  case CMD_READBYTE:
+    x->confdata=0;
+    x->result=pci_read_config_byte(sh,
+				   x->offset,
+				   (u8*)&(x->confdata));
+    return 0;
+
+  case CMD_READWORD:
+    x->confdata=0;
+    x->result=pci_read_config_word(sh,
+				   x->offset,
+				   (u16*)&(x->confdata));
+    return 0;
+  case CMD_READLONG:
+    x->confdata=0;
+    x->result=pci_read_config_dword(sh,
+				    x->offset,
+				    (u32*)&(x->confdata));
+    return 0;
+  case CMD_WRITEBYTE:
+    x->result=pci_write_config_byte(sh,
+				    x->offset,
+				    (u8)(x->confdata));
+    return 0;
+  case CMD_WRITEWORD:
+    x->result=pci_write_config_word(sh,
+				    x->offset,
+				    (u16)(x->confdata));
+    return 0;
+  case CMD_WRITELONG:
+    x->result=pci_write_config_dword(sh,
+				     x->offset,
+				     (u32)(x->confdata));
+    return 0;
+    
+  case CMD_GETBASE:
+    x->start=sh->resource[x->basenum].start;
+    x->end=sh->resource[x->basenum].end;
+    x->flags=sh->resource[x->basenum].flags;
+    return 0;
+
+  case CMD_GETINFO:
+    x->irq=sh->irq;
+    x->devnum=PCI_SLOT(sh->devfn);
+    x->funnum=PCI_FUNC(sh->devfn);
+    x->busnum=sh->bus->number;
+    return 0;
+
+  case CMD_GETNAME:
+    {
+      int len=0;
+      do {  
+	if (COPY_TO_USER((void*)(x->res_name+len),(void*)(sh->name+len),1))
+	  return -EFAULT;
+      } while (sh->name[len++]);
+    }
+    return 0;
+  default:
+    return -EINVAL;
+  }
+}
 
 //==== irq utilities ===================================================
 
@@ -818,11 +1225,12 @@ static int irq_open(Inode* inode, File* file)
 	PREFIX(); PFX(irq_inode(inode)); PRDEBUG("opening by %d...\n",
 		current->pid);
 
-	if (irq_inode(inode)>=NR_IRQS)
+	if (irq_inode(inode)>=NR_IRQS && irq_inode(inode)!=PCI_MINOR)
 		return -ENXIO;
+#if 0
 	if (file->f_flags & ~O_ACCMODE)
 		return -EINVAL;
-
+#endif
 	file->private_data=NULL;
 
 	MOD_INC_USE_COUNT;
@@ -835,6 +1243,8 @@ static FILE_OPERATIONS_CLOSE_TYPE irq_close(Inode* UNUSED inode, File* file)
 {
 	register irq_chan* ich=file->private_data;
 
+	if (irq_inode(inode)==PCI_MINOR) 
+	  release_all_devices();
 	PREFIX(); PFX(irq_inode(inode)); PRDEBUG("closing by %d...\n",
 		current->pid);
 	PREFIX(); TCHLIST_PRINT();
@@ -873,13 +1283,24 @@ static FILE_OPERATIONS_SEEK_PROTOTYPE(irq_seek, UNUSED inode, UNUSED file,
 	return -ESPIPE;
 }
 
+extern unsigned long cpu_khz;
+extern void schedule_hiprec(void);
+
+#define rdtsc(low,high) \
+     __asm__ __volatile__("rdtsc" : "=a" (low), "=d" (high))
+
 static int irq_ioctl(Inode* inode, File* file, uint cmd, ulong arg)
 {
   uint irq=irq_inode(inode);
   int rc=0;
   __irq_request_arg req_arg;
+  unsigned long long when;
   irq_chan* ich=file->private_data;
 
+  if (irq==PCI_MINOR) { /* ANY ioctl on the pci one will release the devices */
+    release_all_devices();
+    return 0;
+  }
   assert_retval(irq<NR_IRQS, -EBADFD);
   PREFIX(); PFX(irq); PRDEBUG("ioctl by %d, cmd: 0x%08X, arg: 0x%08lX\n",
 			      current->pid, cmd, arg);
@@ -998,10 +1419,140 @@ static int irq_ioctl(Inode* inode, File* file, uint cmd, ulong arg)
 
     case __IRQ_STAT_IOCTL:
       return -ENOTSUP;
+
+    case __UAE_SET_TIMER_IOCTL:
+      if ( COPY_FROM_USER(&when, (const void*)arg, sizeof(when)) )
+	return -EFAULT;
+      uae_nextevent=when;
+      uae_alert=when-cpu_khz/HZ*2000;
+      if (uae_alert>when)
+	uae_alert=0;
+#if 0
+      printk("uae_nextevent=%u/%u, uae_alert=%u/%u\n",
+	     (unsigned int)(uae_nextevent>>32),
+	     (unsigned int)uae_nextevent,
+	     (unsigned int)(uae_alert>>32),
+	     (unsigned int)uae_alert);
+#endif
+      schedule_hiprec();
+      return 0;
+
+    case __UAE_GET_RANGE_IOCTL:
+      {
+	long index;
+	int se;
+
+	if ( COPY_FROM_USER(&index, (const void*)arg, sizeof(index)) )
+	  return -EFAULT;
+	if (index==-1) {
+	  index=blockindex;
+	  if (COPY_TO_USER((void*) arg,&index,sizeof(index)))
+	    return -EFAULT;
+	  return 0;
+	}
+	se=index&1;
+	index/=2;
+	if (index<0 || index>=UAE_BLOCKS_N)
+	  return -EFAULT;
+	if (se) 
+	  index=uae_blocks[index].start;
+	else
+	  index=uae_blocks[index].end;
+	if (COPY_TO_USER((void*) arg,&index,sizeof(index)))
+	  return -EFAULT;
+	return 0;
+      }
+
+    case __UAE_SET_FPF_IOCTL:
+      {
+	long index;
+	int se;
+
+	if ( COPY_FROM_USER(&fpf, (const void*)arg, sizeof(fpf)) )
+	  return -EFAULT;
+	fpf.task=current;
+      }
+      return 0;
+
+    case __UAE_GET_FPF_EIP_IOCTL:
+      {
+	long index;
+	int se;
+
+	if ( COPY_TO_USER((void*)arg, &fpf_eip, sizeof(fpf_eip)) )
+	  return -EFAULT;
+      }
+      return 0;
+
+    case __UAE_READ_IOPORT_IOCTL:
+      {
+	ioport_data id;
+	int count;
+	unsigned short* data;
+	int dummy;
+	unsigned int now;
+	unsigned char x;
+
+	if ( COPY_FROM_USER(&id, (const void*)arg, sizeof(id)) )
+	  return -EFAULT;
+	count=id.count;
+	data=(unsigned short*)(id.addr);
+
+	cli();
+	while (count--) {
+	  x=inb(id.port);
+	  rdtsc(now,dummy);
+	  now&=~0x000f;
+	  x&=0x08;
+	  now|=x;
+	  *data++=now;
+	}
+	sti();
+      }
+      return 0;
+
+    case __UAE_PCI_OP_IOCTL:
+      {
+	pcidata pd;
+	int answer;
+	if ( COPY_FROM_USER(&pd, (const void*)arg, sizeof(pd)) )
+	  return -EFAULT;
+	answer=pcicommand(&pd);
+	if (answer)
+	  return answer;
+	if ( COPY_TO_USER((void*)arg, &pd, sizeof(pd)) )
+	  return -EFAULT;
+      }
+      return 0;
+
+    case __UAE_SET_IRQHANDLER_IOCTL:
+      {
+	unsigned long x;
+	if ( COPY_FROM_USER(&x, (const void*)arg, sizeof(x)) )
+	  return -EFAULT;
+	process_to_elevate=x;
+	return 0;
+      }
+	
+    case __UAE_STOP_IRQHANDLER_IOCTL:
+      {
+	do_elevate_process=0;
+	xchg_compat( &NEED_RESCHED, 1 );
+	return 0;
+      }
+
+    case __UAE_GET_ZEROPAGE_IOCTL:
+      {
+	unsigned long x=zeropage;
+	if (COPY_TO_USER((void*)arg,&x,sizeof(x)))
+	  return -EFAULT;
+	return 0;
+      }
+
     default:
       return -ENOSYS;
     }
-
+  
   return 0;
 }
 
@@ -1283,6 +1834,9 @@ static void irq_handler(int irq, void* dev_id, struct pt_regs* UNUSED ptregs)
 	assert_retvoid(ich->signature==ICH_SIG);
 	assert_retvoid(ich==ich->file->private_data && (uint)irq==ich->irq);
 
+	disable_irq_nosync(irq);
+	++disabled_irq_counts[irq];
+
 	ich->irq_count++;
 
 	if ( ich->flags&IRQ_SKIPPING_CONSENT && skipping_irq_counts[irq] )
@@ -1310,10 +1864,20 @@ static void do_irq(register irq_chan* ich)
 			ich->sig_count++;
 			PREFIX(); PFX(ich->irq); PRDEBUG("sent ");
 				ICH_PRINT(ich); PRENDL();
+				do_elevate_process=1;  /* Get a fast response */
 		}
 	xchg_compat( &NEED_RESCHED, 1 );
 }
 
+
+
+/* UAE hackery */
+void uae_trigger(void)
+{
+  irq_simulate(31);
+  uae_alert=~0;
+  uae_nextevent=~0;
+}
 
 /*
 $Log: irq.c,v $

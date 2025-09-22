@@ -458,5 +458,8 @@ int RivaGetConfig(RIVA_HW_INST *);
 	(hwinst).FifoFreeCount = (hwinst).hwptr->FifoFree >> 2;        \
    (hwinst).FifoFreeCount -= (cnt);                                \
 }
+
+void setPitches(RIVA_HW_INST *chip, int pitch0, int pitch1, 
+		int pitch2, int pitch3, int off0, int off1);
 #endif /* __RIVA_HW_H__ */
 

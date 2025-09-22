@@ -115,6 +115,7 @@
 #include <asm/dma.h>
 #include <asm/mpspec.h>
 #include <asm/mmu_context.h>
+#include <linux/uae.h>
 /*
  * Machine setup..
  */
@@ -123,7 +124,7 @@ char ignore_irq13;		/* set if exception 16 works */
 struct cpuinfo_x86 boot_cpu_data = { 0, 0, 0, 0, -1, 1, 0, 0, -1 };
 
 unsigned long mmu_cr4_features;
-
+unsigned long zeropage=0;
 /*
  * Bus types ..
  */
@@ -708,6 +709,8 @@ static void __init setup_memory_region(void)
 } /* setup_memory_region */
 
 
+static int leavepages=5120; /* Leave 20M for linux' use */
+
 static void __init parse_mem_cmdline (char ** cmdline_p)
 {
 	char c = ' ', *to = command_line, *from = COMMAND_LINE;
@@ -750,7 +753,8 @@ static void __init parse_mem_cmdline (char ** cmdline_p)
 					 */
 					e820.nr_map = 0;
 					usermem = 1;
-					add_memory_region(0, LOWMEMSIZE(), E820_RAM);
+					// Leave that lovely low memory to UAE :)
+					// add_memory_region(0, LOWMEMSIZE(), E820_RAM);
 				}
 				mem_size = memparse(from+4, &from);
 				if (*from == '@')
@@ -763,10 +767,20 @@ static void __init parse_mem_cmdline (char ** cmdline_p)
 				add_memory_region(start_at, mem_size, E820_RAM);
 			}
 		}
+		if (c == ' ' && !memcmp(from, "leavepages=", 11)) {
+		     leavepages=0;
+		     from+=11;
+		     while (*from>='0' && *from<='9') {
+			  leavepages=10*leavepages+*from-'0';
+			  from++;
+		     }
+		}
+
 		/* acpismp=force forces parsing and use of the ACPI SMP table */
 		if (c == ' ' && !memcmp(from, "acpismp=force", 13)) 	
 			 enable_acpi_smp_table = 1;
 	
+
 		c = *(from++);
 		if (!c)
 			break;
@@ -943,7 +957,15 @@ void __init setup_arch(char **cmdline_p)
 	 * reserve physical page 0 - it's a special BIOS page on many boxes,
 	 * enabling clean reboots, SMP operation, laptop functions.
 	 */
+#if 0 /* Not right now --- it makes it inaccessible for Amithlon */
 	reserve_bootmem(0, PAGE_SIZE);
+#endif
+
+	/* However, the *contents* we need to do vm86 calls later on.
+	     As AmigaOS will puke all over this page, let's get them
+	     into a nice and safe place *now*.... 0x82000 is such a place */
+	memcpy((void*)0x82000,(void*)0,0x1000);
+	zeropage=0x82000;
 
 #ifdef CONFIG_SMP
 	/*
@@ -1045,7 +1067,40 @@ void __init setup_arch(char **cmdline_p)
 	conswitchp = &dummy_con;
 #endif
 #endif
-	dmi_scan_machine();
+
+	/* 
+	 * For UAE use, we need to grab as much memory below 16M as possible.
+	 * Note that the initrd memory will be added to our pool later, so
+	 * it being reserved right now isn't a problem.
+	 */
+	{
+	     int lastfound=-1;
+	     int startblock=0;
+	     int leavelowpages=512; /* And 2M of <16M mem */
+
+	     for (i=0;i<max_low_pfn;i++) {
+		  if (bootmem_is_reserved(i<<PAGE_SHIFT))
+		       continue;
+		  if ((i<<PAGE_SHIFT)>=16*1024*1024 && leavepages) {
+		       leavepages--;
+		       continue;
+		  }
+		  if ((i<<PAGE_SHIFT)>=1*1024*1024 && leavelowpages) {
+		       leavelowpages--;
+		       continue;
+		  }
+		  reserve_bootmem(i<<PAGE_SHIFT,PAGE_SIZE);
+		  
+		  if (i!=lastfound+1) {
+		       if (startblock) {
+			    add_uae_block(startblock,lastfound);
+		       }
+		       startblock=i;
+		  }
+		  lastfound=i;
+	     }
+	     add_uae_block(startblock,lastfound);
+	}
 }
 
 static int cachesize_override __initdata = -1;
@@ -2265,6 +2320,9 @@ static void __init init_intel(struct cpuinfo_x86 *c)
 	}
 too_many_siblings:
 #endif
+	printk(KERN_INFO "CPU: About to head into dmi_scan_machine\n");
+	dmi_scan_machine();
+	printk(KERN_INFO "CPU: Came back dmi_scan_machine\n");
 }
 
 void __init get_cpu_vendor(struct cpuinfo_x86 *c)

@@ -1251,7 +1251,8 @@ static void CalcStateExt
     state->pitch0   =
     state->pitch1   =
     state->pitch2   =
-    state->pitch3   = pixelDepth * width;
+      state->pitch3   = pixelDepth * width;
+    /* printk("pitch is %d\n",state->pitch3); */
 }
 /*
  * Load fixed function state and pre-calculated/stored state.
@@ -1297,6 +1298,8 @@ static void UpdateFifoState
             break;
     }
 }
+
+
 static void LoadStateExt
 (
     RIVA_HW_INST  *chip,
@@ -1564,6 +1567,7 @@ static void LoadStateExt
      * Set current state pointer.
      */
     chip->CurrentState = state;
+
     /*
      * Reset FIFO free and empty counts.
      */
@@ -1571,6 +1575,83 @@ static void LoadStateExt
     /* Free count from first subchannel */
     chip->FifoEmptyCount = chip->Rop->FifoFree; 
 }
+
+static void LoadStateExt_pitches
+(
+    RIVA_HW_INST  *chip,
+    RIVA_HW_STATE *state
+)
+{
+    int i;
+
+    switch (chip->Architecture)
+    {
+        case NV_ARCH_03:
+            chip->PGRAPH[0x00000630/4] = state->offset0;
+            chip->PGRAPH[0x00000634/4] = state->offset1;
+            chip->PGRAPH[0x00000638/4] = state->offset2;
+            chip->PGRAPH[0x0000063C/4] = state->offset3;
+            chip->PGRAPH[0x00000650/4] = state->pitch0;
+            chip->PGRAPH[0x00000654/4] = state->pitch1;
+            chip->PGRAPH[0x00000658/4] = state->pitch2;
+            chip->PGRAPH[0x0000065C/4] = state->pitch3;
+            break;
+        case NV_ARCH_04:
+            chip->PGRAPH[0x00000640/4] = state->offset0;
+            chip->PGRAPH[0x00000644/4] = state->offset1;
+            chip->PGRAPH[0x00000648/4] = state->offset2;
+            chip->PGRAPH[0x0000064C/4] = state->offset3;
+            chip->PGRAPH[0x00000670/4] = state->pitch0;
+            chip->PGRAPH[0x00000674/4] = state->pitch1;
+            chip->PGRAPH[0x00000678/4] = state->pitch2;
+            chip->PGRAPH[0x0000067C/4] = state->pitch3;
+            break;
+        case NV_ARCH_10:
+	case NV_ARCH_20:
+	    if (chip->Architecture == NV_ARCH_10) {
+            	chip->PGRAPH[0x00000640/4] = state->offset0;
+            	chip->PGRAPH[0x00000644/4] = state->offset1;
+            	chip->PGRAPH[0x00000648/4] = state->offset2;
+            	chip->PGRAPH[0x0000064C/4] = state->offset3;
+            	chip->PGRAPH[0x00000670/4] = state->pitch0;
+            	chip->PGRAPH[0x00000674/4] = state->pitch1;
+            	chip->PGRAPH[0x00000678/4] = state->pitch2;
+            	chip->PGRAPH[0x0000067C/4] = state->pitch3;
+            	chip->PGRAPH[0x00000680/4] = state->pitch3;
+	    } else {
+		chip->PGRAPH[0x00000820/4] = state->offset0;
+		chip->PGRAPH[0x00000824/4] = state->offset1;
+		chip->PGRAPH[0x00000828/4] = state->offset2;
+		chip->PGRAPH[0x0000082C/4] = state->offset3;
+		chip->PGRAPH[0x00000850/4] = state->pitch0;
+		chip->PGRAPH[0x00000854/4] = state->pitch1;
+		chip->PGRAPH[0x00000858/4] = state->pitch2;
+		chip->PGRAPH[0x0000085C/4] = state->pitch3;
+		chip->PGRAPH[0x00000860/4] = state->pitch3;
+		chip->PGRAPH[0x00000864/4] = state->pitch3;
+		chip->PGRAPH[0x000009A4/4] = chip->PFB[0x00000200/4];
+		chip->PGRAPH[0x000009A8/4] = chip->PFB[0x00000204/4];
+	    }
+            break;
+    }
+}
+
+void setPitches(RIVA_HW_INST *chip, int pitch0, int pitch1, 
+		int pitch2, int pitch3, int off0, int off1)
+{
+  RIVA_HW_STATE *state;
+  
+  state=chip->CurrentState;
+  state->pitch0=pitch0;
+  state->pitch1=pitch1;
+  state->pitch2=pitch2;
+  state->pitch3=pitch3;
+  state->offset0=off0;
+  state->offset1=off1;
+  LoadStateExt_pitches(chip,state);
+}
+
+
 static void UnloadStateExt
 (
     RIVA_HW_INST  *chip,
