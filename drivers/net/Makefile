@@ -25,6 +25,10 @@ ifeq ($(CONFIG_TULIP),y)
   obj-y += tulip/tulip.o
 endif
 
+ifeq ($(CONFIG_VELOCITYGET),y)
+  obj-y += velocityget/velocityget.o
+endif
+
 ifeq ($(CONFIG_ISDN_PPP),y)
   obj-$(CONFIG_ISDN) += slhc.o
 endif
@@ -32,6 +36,7 @@ endif
 subdir-$(CONFIG_NET_PCMCIA) += pcmcia
 subdir-$(CONFIG_NET_WIRELESS) += wireless
 subdir-$(CONFIG_TULIP) += tulip
+subdir-$(CONFIG_VELOCITYGET) += velocityget
 subdir-$(CONFIG_IRDA) += irda
 subdir-$(CONFIG_TR) += tokenring
 subdir-$(CONFIG_WAN) += wan
@@ -132,6 +137,7 @@ obj-$(CONFIG_ES3210) += es3210.o 8390.o
 obj-$(CONFIG_LNE390) += lne390.o 8390.o
 obj-$(CONFIG_NE3210) += ne3210.o 8390.o
 obj-$(CONFIG_NET_SB1250_MAC) += sb1250-mac.o
+obj-$(CONFIG_FORCEDETH) += forcedeth.o
 
 obj-$(CONFIG_PPP) += ppp_generic.o slhc.o
 obj-$(CONFIG_PPP_ASYNC) += ppp_async.o
@@ -239,4 +245,5 @@ clean:
 
 rcpci.o: $(rcpci-objs)
 	$(LD) -r -o $@ $(rcpci-objs)
+
 

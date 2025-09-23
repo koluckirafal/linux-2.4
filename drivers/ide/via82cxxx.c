@@ -103,11 +103,10 @@ static struct via_isa_bridge {
 	unsigned char rev_max;
 	unsigned short flags;
 } via_isa_bridges[] = {
-#ifdef FUTURE_BRIDGES
 	{ "vt8237",	PCI_DEVICE_ID_VIA_8237,     0x00, 0x2f, VIA_UDMA_100 },
 	{ "vt8235",	PCI_DEVICE_ID_VIA_8235,     0x00, 0x2f, VIA_UDMA_100 },
-	{ "vt8233c",	PCI_DEVICE_ID_VIA_8233C,    0x00, 0x2f, VIA_UDMA_100 },
-#endif
+	{ "vt8233a",	PCI_DEVICE_ID_VIA_8233A, 	0x00,0x2f, VIA_UDMA_100 },
+	{ "vt8233c",	PCI_DEVICE_ID_VIA_8233C_0,    0x00, 0x2f, VIA_UDMA_100 },
 	{ "vt8233",	PCI_DEVICE_ID_VIA_8233_0,   0x00, 0x2f, VIA_UDMA_100 },
 	{ "vt8231",	PCI_DEVICE_ID_VIA_8231,     0x00, 0x2f, VIA_UDMA_100 },
 	{ "vt82c686b",	PCI_DEVICE_ID_VIA_82C686,   0x40, 0x4f, VIA_UDMA_100 },
@@ -161,7 +160,7 @@ static int via_get_info(char *buffer, char **addr, off_t offset, int count)
 
 	via_print("----------VIA BusMastering IDE Configuration----------------");
 
-	via_print("Driver Version:                     3.29");
+	via_print("Driver Version:                     3.29-Amithlon");
 	via_print("South Bridge:                       VIA %s", via_config->name);
 
 	pci_read_config_byte(isa_dev, PCI_REVISION_ID, &t);
@@ -538,3 +537,6 @@ void __init ide_dmacapable_via82cxxx(ide_hwif_t *hwif, unsigned long dmabase)
 	if ((via_enabled >> hwif->channel) & 1)
 		ide_setup_dma(hwif, dmabase, 8);
 }
+
+
+

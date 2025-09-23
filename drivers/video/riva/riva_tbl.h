@@ -36,11 +36,16 @@
 |*     those rights set forth herein.                                        *|
 |*                                                                           *|
  \***************************************************************************/
-/* $XFree86: xc/programs/Xserver/hw/xfree86/drivers/nv/riva_tbl.h,v 1.8 2001/09/19 23:40:06 mvojkovi Exp $ */
 
+/*
+ * GPL licensing note -- nVidia is allowing a liberal interpretation of
+ * the documentation restriction above, to merely say that this nVidia's
+ * copyright and disclaimer should be included with all code derived
+ * from this source.  -- Jeff Garzik <jgarzik@mandrakesoft.com>, 01/Nov/99 
+ */
 
-#define X_BYTE_ORDER 1
-#define X_BIG_ENDIAN 2
+/* $XFree86: xc/programs/Xserver/hw/xfree86/drivers/nv/riva_tbl.h,v 1.9 2002/01/30 01:35:03 mvojkovi Exp $ */
+
 
 /*
  * RIVA Fixed Functionality Init Tables.
@@ -847,42 +852,42 @@ static unsigned nv10TablePRAMIN[][2] =
     {0x00000501, 0x01FFFFFF},
     {0x00000502, 0x00000002},
     {0x00000503, 0x00000002},
-#if X_BYTE_ORDER == X_BIG_ENDIAN
+#ifdef __BIG_ENDIAN
     {0x00000508, 0x01088043}, 
 #else
-    {0x00000508, 0x01008043}, 
+    {0x00000508, 0x01008043},
 #endif
     {0x0000050A, 0x00000000},
     {0x0000050B, 0x00000000},
-#if X_BYTE_ORDER == X_BIG_ENDIAN
+#ifdef __BIG_ENDIAN
     {0x0000050C, 0x01088019},
 #else
     {0x0000050C, 0x01008019},
 #endif
     {0x0000050E, 0x00000000},
     {0x0000050F, 0x00000000},
-#if X_BYTE_ORDER == X_BIG_ENDIAN
+#ifdef __BIG_ENDIAN
     {0x00000510, 0x01088018},
 #else
     {0x00000510, 0x01008018},
 #endif
     {0x00000512, 0x00000000},
     {0x00000513, 0x00000000},
-#if X_BYTE_ORDER == X_BIG_ENDIAN
+#ifdef __BIG_ENDIAN
     {0x00000514, 0x01088021},
 #else
     {0x00000514, 0x01008021},
 #endif
     {0x00000516, 0x00000000},
     {0x00000517, 0x00000000},
-#if X_BYTE_ORDER == X_BIG_ENDIAN
+#ifdef __BIG_ENDIAN
     {0x00000518, 0x0108805F},
 #else
     {0x00000518, 0x0100805F},
 #endif
     {0x0000051A, 0x00000000},
     {0x0000051B, 0x00000000},
-#if X_BYTE_ORDER == X_BIG_ENDIAN
+#ifdef __BIG_ENDIAN
     {0x0000051C, 0x0108804B},
 #else
     {0x0000051C, 0x0100804B},
@@ -901,14 +906,14 @@ static unsigned nv10TablePRAMIN[][2] =
     {0x00000529, 0x00000D01},
     {0x0000052A, 0x11401140},
     {0x0000052B, 0x00000000},
-#if X_BYTE_ORDER == X_BIG_ENDIAN
+#ifdef __BIG_ENDIAN
     {0x0000052C, 0x00080058},
 #else
     {0x0000052C, 0x00000058},
 #endif
     {0x0000052E, 0x11401140},
     {0x0000052F, 0x00000000},
-#if X_BYTE_ORDER == X_BIG_ENDIAN
+#ifdef __BIG_ENDIAN
     {0x00000530, 0x00080059},
 #else
     {0x00000530, 0x00000059},
@@ -924,7 +929,7 @@ static unsigned nv10TablePRAMIN[][2] =
     {0x0000053C, 0x00000093},
     {0x0000053E, 0x11401140},
     {0x0000053F, 0x00000000},
-#if X_BYTE_ORDER == X_BIG_ENDIAN
+#ifdef __BIG_ENDIAN
     {0x00000540, 0x0308A01C},
 #else
     {0x00000540, 0x0300A01C},

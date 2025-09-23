@@ -5,10 +5,13 @@
  *  Copyright (C) 1992  by Linus Torvalds
  *  based on ideas by Darren Senn
  *
- *  This used to be the part of array.c. See the rest of history and credits
- *  there. I took this into a separate file and switched the thing to generic
+ *  This used to be the part of array.c. See the rest of history and 
+credits
+ *  there. I took this into a separate file and switched the thing to 
+generic
  *  proc_file_inode_operations, leaving in array.c only per-process stuff.
- *  Inumbers allocation made dynamic (via create_proc_entry()).  AV, May 1999.
+ *  Inumbers allocation made dynamic (via create_proc_entry()).  AV, May 
+1999.
  *
  * Changes:
  * Fulton Green      :  Encapsulated position metric calculations.
@@ -45,9 +48,11 @@
 #define LOAD_INT(x) ((x) >> FSHIFT)
 #define LOAD_FRAC(x) LOAD_INT(((x) & (FIXED_1-1)) * 100)
 /*
- * Warning: stuff below (imported functions) assumes that its output will fit
+ * Warning: stuff below (imported functions) assumes that its output will 
+fit
  * into one page. For some of those functions it may be wrong. Moreover, we
- * have a way to deal with that gracefully. Right now I used straightforward
+ * have a way to deal with that gracefully. Right now I used 
+straightforward
  * wrappers, but this needs further analysis wrt potential overflows.
  */
 extern int get_hardware_list(char *);
@@ -106,11 +111,13 @@ static int uptime_read_proc(char *page, char **start, off_t off,
 	uptime = jiffies;
 	idle = init_tasks[0]->times.tms_utime + init_tasks[0]->times.tms_stime;
 
-	/* The formula for the fraction parts really is ((t * 100) / HZ) % 100, but
+	/* The formula for the fraction parts really is ((t * 100) / HZ) % 100, 
+but
 	   that would overflow about every five days at HZ == 100.
 	   Therefore the identity a = (a / b) * b + a % b is used so that it is
 	   calculated as (((t / HZ) * 100) + ((t % HZ) * 100) / HZ) % 100.
-	   The part in front of the '+' always evaluates as 0 (mod 100). All divisions
+	   The part in front of the '+' always evaluates as 0 (mod 100). All 
+divisions
 	   in the above formulas are truncating. For HZ being a power of 10, the
 	   calculations simplify to the version in the #else part (if the printf
 	   format is adapted to the same number of digits as zeroes in HZ.
@@ -147,7 +154,8 @@ static int meminfo_read_proc(char *page, char **start, off_t off,
 	si_swapinfo(&i);
 	pg_size = atomic_read(&page_cache_size) - i.bufferram ;
 
-	len = sprintf(page, "        total:    used:    free:  shared: buffers:  cached:\n"
+	len = sprintf(page, "        total:    used:    free:  shared: buffers:  
+cached:\n"
 		"Mem:  %8Lu %8Lu %8Lu %8Lu %8Lu %8Lu\n"
 		"Swap: %8Lu %8Lu %8Lu\n",
 		B(i.totalram), B(i.totalram-i.freeram), B(i.freeram),
@@ -200,7 +208,9 @@ static int version_read_proc(char *page, char **start, off_t off,
 	extern char *linux_banner;
 	int len;
 
-	strcpy(page, linux_banner);
+/*	strcpy(page, linux_banner); */
+	strcpy(page, "Amithlon kernel version 3.0.0-test1(2.4.19-pre4). Compiled 19th 
+Dec 2005. Maintained by Gary Colville (bombcrater@garycvl.f2s.com).");
 	len = strlen(page);
 	return proc_calc_metrics(page, start, off, count, eof, len);
 }
@@ -480,7 +490,8 @@ static ssize_t read_profile(struct file *file, char *buf,
 /*
  * Writing to /proc/profile resets the counters
  *
- * Writing a 'profiling multiplier' value into it also re-sets the profiling
+ * Writing a 'profiling multiplier' value into it also re-sets the 
+profiling
  * interrupt frequency, on architectures that support this.
  */
 static ssize_t write_profile(struct file * file, const char * buf,
@@ -523,7 +534,8 @@ static struct file_operations proc_mounts_operations = {
 
 struct proc_dir_entry *proc_root_kcore;
 
-static void create_seq_entry(char *name, mode_t mode, struct file_operations *f)
+static void create_seq_entry(char *name, mode_t mode, struct 
+file_operations *f)
 {
 	struct proc_dir_entry *entry;
 	entry = create_proc_entry(name, mode, NULL);
@@ -611,3 +623,5 @@ void __init proc_misc_init(void)
 	if (entry)
 		entry->write_proc = slabinfo_write_proc;
 }
+
+
