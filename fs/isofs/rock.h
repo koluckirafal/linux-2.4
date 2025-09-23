@@ -72,6 +72,13 @@ struct RR_TF{
   struct stamp times[0];  /* Variable number of these beasts */
 };
 
+/* Linux-specific extension for transparent decompression */
+struct RR_ZF{
+  char algorithm[2];
+  char parms[2];
+  char real_size[8];
+};
+
 /* These are the bits and their meanings for flags in the TF structure. */
 #define TF_CREATE 1
 #define TF_MODIFY 2
@@ -98,6 +105,7 @@ struct rock_ridge{
     struct RR_CL CL;
     struct RR_PL PL;
     struct RR_TF TF;
+    struct RR_ZF ZF;
   } u;
 };
 

@@ -68,14 +68,10 @@ void free_vfsmnt(struct vfsmount *mnt)
 
 void set_devname(struct vfsmount *mnt, const char *name)
 {
-	if (name) {
-		int size = strlen(name)+1;
-		char * newname = kmalloc(size, GFP_KERNEL);
-		if (newname) {
-			memcpy(newname, name, size);
-			mnt->mnt_devname = newname;
-		}
-	}
+	if (name)
+		mnt->mnt_devname = kmalloc(strlen(name)+1, GFP_KERNEL);
+	if (mnt->mnt_devname)
+		strcpy(mnt->mnt_devname, name);
 }
 
 struct vfsmount *lookup_mnt(struct vfsmount *mnt, struct dentry *dentry)

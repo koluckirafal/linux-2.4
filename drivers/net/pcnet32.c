@@ -1374,6 +1374,13 @@ pcnet32_close(struct net_device *dev)
      */
     lp->a.write_bcr (ioaddr, 20, 4);
 
+    /*
+     *	FIXME: What happens if the bcr write is posted, the buffers are
+     *	freed and there is still incoming DMA traffic
+     */
+
+#warning "PCI posting bug"
+
     free_irq(dev->irq, dev);
     
     /* free all allocated skbuffs */

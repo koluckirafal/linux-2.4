@@ -508,16 +508,20 @@ static boolean DAC960_V1_ExecuteType3(DAC960_Controller_T *Controller,
 				      void *DataPointer)
 {
   DAC960_Command_T *Command = DAC960_AllocateCommand(Controller);
-  DAC960_V1_CommandMailbox_T *CommandMailbox = &Command->V1.CommandMailbox;
-  DAC960_V1_CommandStatus_T CommandStatus;
-  DAC960_V1_ClearCommand(Command);
-  Command->CommandType = DAC960_ImmediateCommand;
-  CommandMailbox->Type3.CommandOpcode = CommandOpcode;
-  CommandMailbox->Type3.BusAddress = Virtual_to_Bus32(DataPointer);
-  DAC960_ExecuteCommand(Command);
-  CommandStatus = Command->V1.CommandStatus;
-  DAC960_DeallocateCommand(Command);
-  return (CommandStatus == DAC960_V1_NormalCompletion);
+  if (Command == NULL) {
+	return false;
+  } else {
+    DAC960_V1_CommandMailbox_T *CommandMailbox = &Command->V1.CommandMailbox;
+    DAC960_V1_CommandStatus_T CommandStatus;
+    DAC960_V1_ClearCommand(Command);
+    Command->CommandType = DAC960_ImmediateCommand;
+    CommandMailbox->Type3.CommandOpcode = CommandOpcode;
+    CommandMailbox->Type3.BusAddress = Virtual_to_Bus32(DataPointer);
+    DAC960_ExecuteCommand(Command);
+    CommandStatus = Command->V1.CommandStatus;
+    DAC960_DeallocateCommand(Command);
+    return (CommandStatus == DAC960_V1_NormalCompletion);
+  }
 }
 
 
@@ -534,18 +538,22 @@ static boolean DAC960_V1_ExecuteType3D(DAC960_Controller_T *Controller,
 				       void *DataPointer)
 {
   DAC960_Command_T *Command = DAC960_AllocateCommand(Controller);
-  DAC960_V1_CommandMailbox_T *CommandMailbox = &Command->V1.CommandMailbox;
-  DAC960_V1_CommandStatus_T CommandStatus;
-  DAC960_V1_ClearCommand(Command);
-  Command->CommandType = DAC960_ImmediateCommand;
-  CommandMailbox->Type3D.CommandOpcode = CommandOpcode;
-  CommandMailbox->Type3D.Channel = Channel;
-  CommandMailbox->Type3D.TargetID = TargetID;
-  CommandMailbox->Type3D.BusAddress = Virtual_to_Bus32(DataPointer);
-  DAC960_ExecuteCommand(Command);
-  CommandStatus = Command->V1.CommandStatus;
-  DAC960_DeallocateCommand(Command);
-  return (CommandStatus == DAC960_V1_NormalCompletion);
+  if (Command == NULL) {
+    return false;
+  } else {
+    DAC960_V1_CommandMailbox_T *CommandMailbox = &Command->V1.CommandMailbox;
+    DAC960_V1_CommandStatus_T CommandStatus;
+    DAC960_V1_ClearCommand(Command);
+    Command->CommandType = DAC960_ImmediateCommand;
+    CommandMailbox->Type3D.CommandOpcode = CommandOpcode;
+    CommandMailbox->Type3D.Channel = Channel;
+    CommandMailbox->Type3D.TargetID = TargetID;
+    CommandMailbox->Type3D.BusAddress = Virtual_to_Bus32(DataPointer);
+    DAC960_ExecuteCommand(Command);
+    CommandStatus = Command->V1.CommandStatus;
+    DAC960_DeallocateCommand(Command);
+    return (CommandStatus == DAC960_V1_NormalCompletion);
+  }
 }
 
 
@@ -561,29 +569,33 @@ static boolean DAC960_V2_GeneralInfo(DAC960_Controller_T *Controller,
 				     unsigned int DataByteCount)
 {
   DAC960_Command_T *Command = DAC960_AllocateCommand(Controller);
-  DAC960_V2_CommandMailbox_T *CommandMailbox = &Command->V2.CommandMailbox;
-  DAC960_V2_CommandStatus_T CommandStatus;
-  DAC960_V2_ClearCommand(Command);
-  Command->CommandType = DAC960_ImmediateCommand;
-  CommandMailbox->Common.CommandOpcode = DAC960_V2_IOCTL;
-  CommandMailbox->Common.CommandControlBits
+  if (Command == NULL) {
+    return false;
+  } else {
+    DAC960_V2_CommandMailbox_T *CommandMailbox = &Command->V2.CommandMailbox;
+    DAC960_V2_CommandStatus_T CommandStatus;
+    DAC960_V2_ClearCommand(Command);
+    Command->CommandType = DAC960_ImmediateCommand;
+    CommandMailbox->Common.CommandOpcode = DAC960_V2_IOCTL;
+    CommandMailbox->Common.CommandControlBits
 			.DataTransferControllerToHost = true;
-  CommandMailbox->Common.CommandControlBits
+    CommandMailbox->Common.CommandControlBits
 			.NoAutoRequestSense = true;
-  CommandMailbox->Common.DataTransferSize = DataByteCount;
-  CommandMailbox->Common.IOCTL_Opcode = IOCTL_Opcode;
-  CommandMailbox->Common.DataTransferMemoryAddress
+    CommandMailbox->Common.DataTransferSize = DataByteCount;
+    CommandMailbox->Common.IOCTL_Opcode = IOCTL_Opcode;
+    CommandMailbox->Common.DataTransferMemoryAddress
 			.ScatterGatherSegments[0]
 			.SegmentDataPointer =
-    Virtual_to_Bus64(DataPointer);
-  CommandMailbox->Common.DataTransferMemoryAddress
+	    Virtual_to_Bus64(DataPointer);
+    CommandMailbox->Common.DataTransferMemoryAddress
 			.ScatterGatherSegments[0]
 			.SegmentByteCount =
-    CommandMailbox->Common.DataTransferSize;
-  DAC960_ExecuteCommand(Command);
-  CommandStatus = Command->V2.CommandStatus;
-  DAC960_DeallocateCommand(Command);
-  return (CommandStatus == DAC960_V2_NormalCompletion);
+	    CommandMailbox->Common.DataTransferSize;
+    DAC960_ExecuteCommand(Command);
+    CommandStatus = Command->V2.CommandStatus;
+    DAC960_DeallocateCommand(Command);
+    return (CommandStatus == DAC960_V2_NormalCompletion);
+  }
 }
 
 
@@ -599,30 +611,34 @@ static boolean DAC960_V2_ControllerInfo(DAC960_Controller_T *Controller,
 					unsigned int DataByteCount)
 {
   DAC960_Command_T *Command = DAC960_AllocateCommand(Controller);
-  DAC960_V2_CommandMailbox_T *CommandMailbox = &Command->V2.CommandMailbox;
-  DAC960_V2_CommandStatus_T CommandStatus;
-  DAC960_V2_ClearCommand(Command);
-  Command->CommandType = DAC960_ImmediateCommand;
-  CommandMailbox->ControllerInfo.CommandOpcode = DAC960_V2_IOCTL;
-  CommandMailbox->ControllerInfo.CommandControlBits
+  if (Command == NULL) {
+    return false;
+  } else {
+    DAC960_V2_CommandMailbox_T *CommandMailbox = &Command->V2.CommandMailbox;
+    DAC960_V2_CommandStatus_T CommandStatus;
+    DAC960_V2_ClearCommand(Command);
+    Command->CommandType = DAC960_ImmediateCommand;
+    CommandMailbox->ControllerInfo.CommandOpcode = DAC960_V2_IOCTL;
+    CommandMailbox->ControllerInfo.CommandControlBits
 				.DataTransferControllerToHost = true;
-  CommandMailbox->ControllerInfo.CommandControlBits
+    CommandMailbox->ControllerInfo.CommandControlBits
 				.NoAutoRequestSense = true;
-  CommandMailbox->ControllerInfo.DataTransferSize = DataByteCount;
-  CommandMailbox->ControllerInfo.ControllerNumber = 0;
-  CommandMailbox->ControllerInfo.IOCTL_Opcode = IOCTL_Opcode;
-  CommandMailbox->ControllerInfo.DataTransferMemoryAddress
+    CommandMailbox->ControllerInfo.DataTransferSize = DataByteCount;
+    CommandMailbox->ControllerInfo.ControllerNumber = 0;
+    CommandMailbox->ControllerInfo.IOCTL_Opcode = IOCTL_Opcode;
+    CommandMailbox->ControllerInfo.DataTransferMemoryAddress
 				.ScatterGatherSegments[0]
 				.SegmentDataPointer =
-    Virtual_to_Bus64(DataPointer);
-  CommandMailbox->ControllerInfo.DataTransferMemoryAddress
+	    Virtual_to_Bus64(DataPointer);
+    CommandMailbox->ControllerInfo.DataTransferMemoryAddress
 				.ScatterGatherSegments[0]
 				.SegmentByteCount =
-    CommandMailbox->ControllerInfo.DataTransferSize;
-  DAC960_ExecuteCommand(Command);
-  CommandStatus = Command->V2.CommandStatus;
-  DAC960_DeallocateCommand(Command);
-  return (CommandStatus == DAC960_V2_NormalCompletion);
+	    CommandMailbox->ControllerInfo.DataTransferSize;
+    DAC960_ExecuteCommand(Command);
+    CommandStatus = Command->V2.CommandStatus;
+    DAC960_DeallocateCommand(Command);
+    return (CommandStatus == DAC960_V2_NormalCompletion);
+  }
 }
 
 
@@ -641,31 +657,35 @@ static boolean DAC960_V2_LogicalDeviceInfo(DAC960_Controller_T *Controller,
 					   unsigned int DataByteCount)
 {
   DAC960_Command_T *Command = DAC960_AllocateCommand(Controller);
-  DAC960_V2_CommandMailbox_T *CommandMailbox = &Command->V2.CommandMailbox;
-  DAC960_V2_CommandStatus_T CommandStatus;
-  DAC960_V2_ClearCommand(Command);
-  Command->CommandType = DAC960_ImmediateCommand;
-  CommandMailbox->LogicalDeviceInfo.CommandOpcode = DAC960_V2_IOCTL;
-  CommandMailbox->LogicalDeviceInfo.CommandControlBits
+  if (Command == NULL) {
+    return false;
+  } else {
+    DAC960_V2_CommandMailbox_T *CommandMailbox = &Command->V2.CommandMailbox;
+    DAC960_V2_CommandStatus_T CommandStatus;
+    DAC960_V2_ClearCommand(Command);
+    Command->CommandType = DAC960_ImmediateCommand;
+    CommandMailbox->LogicalDeviceInfo.CommandOpcode = DAC960_V2_IOCTL;
+    CommandMailbox->LogicalDeviceInfo.CommandControlBits
 				   .DataTransferControllerToHost = true;
-  CommandMailbox->LogicalDeviceInfo.CommandControlBits
+    CommandMailbox->LogicalDeviceInfo.CommandControlBits
 				   .NoAutoRequestSense = true;
-  CommandMailbox->LogicalDeviceInfo.DataTransferSize = DataByteCount;
-  CommandMailbox->LogicalDeviceInfo.LogicalDevice.LogicalDeviceNumber =
-    LogicalDeviceNumber;
-  CommandMailbox->LogicalDeviceInfo.IOCTL_Opcode = IOCTL_Opcode;
-  CommandMailbox->LogicalDeviceInfo.DataTransferMemoryAddress
+    CommandMailbox->LogicalDeviceInfo.DataTransferSize = DataByteCount;
+    CommandMailbox->LogicalDeviceInfo.LogicalDevice.LogicalDeviceNumber =
+	    LogicalDeviceNumber;
+    CommandMailbox->LogicalDeviceInfo.IOCTL_Opcode = IOCTL_Opcode;
+    CommandMailbox->LogicalDeviceInfo.DataTransferMemoryAddress
 				   .ScatterGatherSegments[0]
 				   .SegmentDataPointer =
-    Virtual_to_Bus64(DataPointer);
-  CommandMailbox->LogicalDeviceInfo.DataTransferMemoryAddress
+	    Virtual_to_Bus64(DataPointer);
+    CommandMailbox->LogicalDeviceInfo.DataTransferMemoryAddress
 				   .ScatterGatherSegments[0]
 				   .SegmentByteCount =
-    CommandMailbox->LogicalDeviceInfo.DataTransferSize;
-  DAC960_ExecuteCommand(Command);
-  CommandStatus = Command->V2.CommandStatus;
-  DAC960_DeallocateCommand(Command);
-  return (CommandStatus == DAC960_V2_NormalCompletion);
+	    CommandMailbox->LogicalDeviceInfo.DataTransferSize;
+    DAC960_ExecuteCommand(Command);
+    CommandStatus = Command->V2.CommandStatus;
+    DAC960_DeallocateCommand(Command);
+    return (CommandStatus == DAC960_V2_NormalCompletion);
+  }
 }
 
 
@@ -685,32 +705,36 @@ static boolean DAC960_V2_PhysicalDeviceInfo(DAC960_Controller_T *Controller,
 					    unsigned int DataByteCount)
 {
   DAC960_Command_T *Command = DAC960_AllocateCommand(Controller);
-  DAC960_V2_CommandMailbox_T *CommandMailbox = &Command->V2.CommandMailbox;
-  DAC960_V2_CommandStatus_T CommandStatus;
-  DAC960_V2_ClearCommand(Command);
-  Command->CommandType = DAC960_ImmediateCommand;
-  CommandMailbox->PhysicalDeviceInfo.CommandOpcode = DAC960_V2_IOCTL;
-  CommandMailbox->PhysicalDeviceInfo.CommandControlBits
+  if (Command == NULL) {
+    return false;
+  } else {
+    DAC960_V2_CommandMailbox_T *CommandMailbox = &Command->V2.CommandMailbox;
+    DAC960_V2_CommandStatus_T CommandStatus;
+    DAC960_V2_ClearCommand(Command);
+    Command->CommandType = DAC960_ImmediateCommand;
+    CommandMailbox->PhysicalDeviceInfo.CommandOpcode = DAC960_V2_IOCTL;
+    CommandMailbox->PhysicalDeviceInfo.CommandControlBits
 				    .DataTransferControllerToHost = true;
-  CommandMailbox->PhysicalDeviceInfo.CommandControlBits
+    CommandMailbox->PhysicalDeviceInfo.CommandControlBits
 				    .NoAutoRequestSense = true;
-  CommandMailbox->PhysicalDeviceInfo.DataTransferSize = DataByteCount;
-  CommandMailbox->PhysicalDeviceInfo.PhysicalDevice.LogicalUnit = LogicalUnit;
-  CommandMailbox->PhysicalDeviceInfo.PhysicalDevice.TargetID = TargetID;
-  CommandMailbox->PhysicalDeviceInfo.PhysicalDevice.Channel = Channel;
-  CommandMailbox->PhysicalDeviceInfo.IOCTL_Opcode = IOCTL_Opcode;
-  CommandMailbox->PhysicalDeviceInfo.DataTransferMemoryAddress
+    CommandMailbox->PhysicalDeviceInfo.DataTransferSize = DataByteCount;
+    CommandMailbox->PhysicalDeviceInfo.PhysicalDevice.LogicalUnit = LogicalUnit;
+    CommandMailbox->PhysicalDeviceInfo.PhysicalDevice.TargetID = TargetID;
+    CommandMailbox->PhysicalDeviceInfo.PhysicalDevice.Channel = Channel;
+    CommandMailbox->PhysicalDeviceInfo.IOCTL_Opcode = IOCTL_Opcode;
+    CommandMailbox->PhysicalDeviceInfo.DataTransferMemoryAddress
 				    .ScatterGatherSegments[0]
 				    .SegmentDataPointer =
-    Virtual_to_Bus64(DataPointer);
-  CommandMailbox->PhysicalDeviceInfo.DataTransferMemoryAddress
+	    Virtual_to_Bus64(DataPointer);
+    CommandMailbox->PhysicalDeviceInfo.DataTransferMemoryAddress
 				    .ScatterGatherSegments[0]
 				    .SegmentByteCount =
-    CommandMailbox->PhysicalDeviceInfo.DataTransferSize;
-  DAC960_ExecuteCommand(Command);
-  CommandStatus = Command->V2.CommandStatus;
-  DAC960_DeallocateCommand(Command);
-  return (CommandStatus == DAC960_V2_NormalCompletion);
+	    CommandMailbox->PhysicalDeviceInfo.DataTransferSize;
+    DAC960_ExecuteCommand(Command);
+    CommandStatus = Command->V2.CommandStatus;
+    DAC960_DeallocateCommand(Command);
+    return (CommandStatus == DAC960_V2_NormalCompletion);
+  }
 }
 
 
@@ -726,21 +750,25 @@ static boolean DAC960_V2_DeviceOperation(DAC960_Controller_T *Controller,
 					   OperationDevice)
 {
   DAC960_Command_T *Command = DAC960_AllocateCommand(Controller);
-  DAC960_V2_CommandMailbox_T *CommandMailbox = &Command->V2.CommandMailbox;
-  DAC960_V2_CommandStatus_T CommandStatus;
-  DAC960_V2_ClearCommand(Command);
-  Command->CommandType = DAC960_ImmediateCommand;
-  CommandMailbox->DeviceOperation.CommandOpcode = DAC960_V2_IOCTL;
-  CommandMailbox->DeviceOperation.CommandControlBits
+  if (Command == NULL) {
+    return false;
+  } else {
+    DAC960_V2_CommandMailbox_T *CommandMailbox = &Command->V2.CommandMailbox;
+    DAC960_V2_CommandStatus_T CommandStatus;
+    DAC960_V2_ClearCommand(Command);
+    Command->CommandType = DAC960_ImmediateCommand;
+    CommandMailbox->DeviceOperation.CommandOpcode = DAC960_V2_IOCTL;
+    CommandMailbox->DeviceOperation.CommandControlBits
 				 .DataTransferControllerToHost = true;
-  CommandMailbox->DeviceOperation.CommandControlBits
+    CommandMailbox->DeviceOperation.CommandControlBits
     				 .NoAutoRequestSense = true;
-  CommandMailbox->DeviceOperation.IOCTL_Opcode = IOCTL_Opcode;
-  CommandMailbox->DeviceOperation.OperationDevice = OperationDevice;
-  DAC960_ExecuteCommand(Command);
-  CommandStatus = Command->V2.CommandStatus;
-  DAC960_DeallocateCommand(Command);
-  return (CommandStatus == DAC960_V2_NormalCompletion);
+    CommandMailbox->DeviceOperation.IOCTL_Opcode = IOCTL_Opcode;
+    CommandMailbox->DeviceOperation.OperationDevice = OperationDevice;
+    DAC960_ExecuteCommand(Command);
+    CommandStatus = Command->V2.CommandStatus;
+    DAC960_DeallocateCommand(Command);
+    return (CommandStatus == DAC960_V2_NormalCompletion);
+  }
 }
 
 
@@ -1425,20 +1453,27 @@ static boolean DAC960_V2_ReadDeviceConfiguration(DAC960_Controller_T
 	kmalloc(sizeof(DAC960_V2_PhysicalDeviceInfo_T), GFP_ATOMIC);
       if (PhysicalDeviceInfo == NULL)
 	return DAC960_Failure(Controller, "PHYSICAL DEVICE ALLOCATION");
+      InquiryUnitSerialNumber = (DAC960_SCSI_Inquiry_UnitSerialNumber_T *)
+	kmalloc(sizeof(DAC960_SCSI_Inquiry_UnitSerialNumber_T), GFP_ATOMIC);
+      if (InquiryUnitSerialNumber == NULL) {
+	kfree(PhysicalDeviceInfo);
+	return DAC960_Failure(Controller, "SERIAL NUMBER ALLOCATION");
+      }
+      Command = DAC960_AllocateCommand(Controller);
+      if (Command == NULL) {
+	kfree(PhysicalDeviceInfo);
+	kfree(InquiryUnitSerialNumber);
+	return DAC960_Failure(Controller, "COMMAND ALLOCATION");
+      }
       Controller->V2.PhysicalDeviceInformation[PhysicalDeviceIndex] =
 	PhysicalDeviceInfo;
       memcpy(PhysicalDeviceInfo, NewPhysicalDeviceInfo,
 	     sizeof(DAC960_V2_PhysicalDeviceInfo_T));
-      InquiryUnitSerialNumber = (DAC960_SCSI_Inquiry_UnitSerialNumber_T *)
-	kmalloc(sizeof(DAC960_SCSI_Inquiry_UnitSerialNumber_T), GFP_ATOMIC);
-      if (InquiryUnitSerialNumber == NULL)
-	return DAC960_Failure(Controller, "SERIAL NUMBER ALLOCATION");
       Controller->V2.InquiryUnitSerialNumber[PhysicalDeviceIndex] =
 	InquiryUnitSerialNumber;
       memset(InquiryUnitSerialNumber, 0,
 	     sizeof(DAC960_SCSI_Inquiry_UnitSerialNumber_T));
       InquiryUnitSerialNumber->PeripheralDeviceType = 0x1F;
-      Command = DAC960_AllocateCommand(Controller);
       CommandMailbox = &Command->V2.CommandMailbox;
       DAC960_V2_ClearCommand(Command);
       Command->CommandType = DAC960_ImmediateCommand;
@@ -4102,7 +4137,8 @@ static void DAC960_V2_ProcessCompletedCommand(DAC960_Command_T *Command)
 	      if (InquiryUnitSerialNumber == NULL &&
 		  PhysicalDeviceInfo != NULL)
 		{
-		  kfree(PhysicalDeviceInfo);
+                  if (PhysicalDeviceInfo)
+		    kfree(PhysicalDeviceInfo);
 		  PhysicalDeviceInfo = NULL;
 		}
 	      DAC960_Critical("Physical Device %d:%d Now Exists%s\n",
@@ -6606,5 +6642,5 @@ void cleanup_module(void)
   DAC960_Finalize(&DAC960_NotifierBlock, SYS_RESTART, NULL);
 }
 
-
+MODULE_LICENSE("GPL");
 #endif

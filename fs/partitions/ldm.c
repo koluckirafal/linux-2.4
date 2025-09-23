@@ -895,7 +895,7 @@ static int validate_partition_table(struct block_device *bdev)
 	put_dev_sector(sect);
 	return 1;
 not_dynamic_disk:
-	ldm_debug("Found basic MS-DOS partition, not a dynamic disk.\n");
+//	ldm_debug("Found basic MS-DOS partition, not a dynamic disk.\n");
 no_msdos_partition:
 	put_dev_sector(sect);
 	return 0;

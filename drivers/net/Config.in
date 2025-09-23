@@ -191,7 +191,7 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
       if [ "$CONFIG_OBSOLETE" = "y" ]; then
 	 dep_bool '    Zenith Z-Note support (EXPERIMENTAL)' CONFIG_ZNET $CONFIG_ISA
       fi
-      if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
+      if [ "$CONFIG_EXPERIMENTAL" = "y" -a "$CONFIG_MIPS" = "y" ]; then
 	 bool '    Philips SAA9730 Ethernet support (EXPERIMENTAL)' CONFIG_LAN_SAA9730
       fi
    fi
@@ -272,6 +272,9 @@ if [ ! "$CONFIG_PPP" = "n" ]; then
    dep_tristate '  PPP BSD-Compress compression' CONFIG_PPP_BSDCOMP $CONFIG_PPP
    if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
       dep_tristate '  PPP over Ethernet (EXPERIMENTAL)' CONFIG_PPPOE $CONFIG_PPP
+   fi
+   if [ ! "$CONFIG_ATM" = "n" ]; then
+      dep_tristate '  PPP over ATM (EXPERIMENTAL)' CONFIG_PPPOATM $CONFIG_PPP
    fi
 fi
 

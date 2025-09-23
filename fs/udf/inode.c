@@ -37,6 +37,7 @@
 #include <linux/locks.h>
 #include <linux/mm.h>
 #include <linux/smp_lock.h>
+#include <linux/module.h>
 
 #include "udf_i.h"
 #include "udf_sb.h"
@@ -2208,3 +2209,4 @@ long udf_block_map(struct inode *inode, long block)
 	else
 		return ret;
 }
+MODULE_LICENSE("GPL");

@@ -408,7 +408,7 @@ static void sysctl_init_random(struct entropy_store *random_state);
  * to optimize a static rotate left of x bits, it doesn't know how to
  * deal with a variable rotate of x bits.  So we use a bit of asm magic.
  */
-#if (!defined (__i386__))
+#if (!defined (__i386__)) && (!defined(__x86_64__))
 extern inline __u32 rotate_left(int i, __u32 word)
 {
 	return (word << i) | (word >> (32 - i));

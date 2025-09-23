@@ -25,6 +25,7 @@ define_bool CONFIG_MCA n
 define_bool CONFIG_SBUS n
 define_bool CONFIG_RWSEM_GENERIC_SPINLOCK y
 define_bool CONFIG_RWSEM_XCHGADD_ALGORITHM n
+define_bool CONFIG_GENERIC_BUST_SPINLOCK n
 
 if [ "$CONFIG_IA64_HP_SIM" = "n" ]; then
   define_bool CONFIG_ACPI y
@@ -149,7 +150,7 @@ if [ "$CONFIG_IA64_HP_SIM" = "n" ]; then
 source drivers/mtd/Config.in
 source drivers/pnp/Config.in
 source drivers/block/Config.in
-source drivers/i2o/Config.in
+source drivers/message/i2o/Config.in
 source drivers/md/Config.in
 
 mainmenu_option next_comment

@@ -47,9 +47,14 @@ static struct vm_operations_struct shmem_vm_ops;
 
 LIST_HEAD (shmem_inodes);
 static spinlock_t shmem_ilock = SPIN_LOCK_UNLOCKED;
-atomic_t shmem_nrpages = ATOMIC_INIT(0); /* Not used right now */
+atomic_t shmem_nrpages = ATOMIC_INIT(0);
 
 #define BLOCKS_PER_PAGE (PAGE_CACHE_SIZE/512)
+
+static void shmem_removepage(struct page *page)
+{
+	atomic_dec(&shmem_nrpages);
+}
 
 /*
  * shmem_recalc_inode - recalculate the size of an inode
@@ -387,6 +392,7 @@ static int shmem_unuse_inode (struct shmem_inode_info *info, swp_entry_t entry, 
 	return 0;
 found:
 	add_to_page_cache(page, info->inode->i_mapping, offset + idx);
+	atomic_inc(&shmem_nrpages);
 	SetPageDirty(page);
 	SetPageUptodate(page);
 	UnlockPage(page);
@@ -436,14 +442,6 @@ static int shmem_writepage(struct page * page)
 	index = page->index;
 	inode = mapping->host;
 	info = SHMEM_I(inode);
-getswap:
-	swap = get_swap_page();
-	if (!swap.val) {
-		activate_page(page);
-		SetPageDirty(page);
-		error = -ENOMEM;
-		goto out;
-	}
 
 	spin_lock(&info->lock);
 	entry = shmem_swp_entry(info, index, 0);
@@ -456,27 +454,33 @@ getswap:
 	/* Remove it from the page cache */
 	lru_cache_del(page);
 	remove_inode_page(page);
-	page_cache_release(page);
 
-	/* Add it to the swap cache */
-	if (add_to_swap_cache(page, swap) != 0) {
-		/*
-		 * Raced with "speculative" read_swap_cache_async.
-		 * Add page back to page cache, unref swap, try again.
-		 */
+	swap_list_lock();
+	swap = get_swap_page();
+
+	if (!swap.val) {
+		swap_list_unlock();
+		/* Add it back to the page cache */
 		add_to_page_cache_locked(page, mapping, index);
-		spin_unlock(&info->lock);
-		swap_free(swap);
-		goto getswap;
+		atomic_inc(&shmem_nrpages);
+		activate_page(page);
+		SetPageDirty(page);
+		error = -ENOMEM;
+		goto out;
 	}
 
-	*entry = swap;
-	info->swapped++;
-	spin_unlock(&info->lock);
+	/* Add it to the swap cache */
+	add_to_swap_cache(page, swap);
+	swap_list_unlock();
+
 	set_page_dirty(page);
+	info->swapped++;
+	*entry = swap;
 	error = 0;
 out:
+	spin_unlock(&info->lock);
 	UnlockPage(page);
+	page_cache_release(page);
 	return error;
 }
 
@@ -589,6 +593,7 @@ repeat:
 	}
 
 	/* We have the page */
+	atomic_inc(&shmem_nrpages);
 	SetPageUptodate(page);
 	if (info->locked)
 		page_cache_get(page);
@@ -1344,6 +1349,7 @@ static struct super_block *shmem_read_super(struct super_block * sb, void * data
 
 
 static struct address_space_operations shmem_aops = {
+	removepage:	shmem_removepage,
 	writepage:	shmem_writepage,
 };
 

@@ -2960,6 +2960,7 @@ static const char *sbp2scsi_info (struct Scsi_Host *host)
 MODULE_AUTHOR("James Goodwin <jamesg@filanet.com>");
 MODULE_DESCRIPTION("IEEE-1394 SBP-2 protocol driver");
 MODULE_SUPPORTED_DEVICE(SBP2_DEVICE_NAME);
+MODULE_LICENSE("GPL");
 
 /* SCSI host template */
 static Scsi_Host_Template driver_template = {

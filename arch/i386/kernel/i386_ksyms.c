@@ -28,6 +28,8 @@
 #include <asm/desc.h>
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
+#include <asm/page.h>
+#include <asm/system.h>
 
 extern void dump_thread(struct pt_regs *, struct user *);
 extern spinlock_t rtc_lock;
@@ -170,8 +172,5 @@ EXPORT_SYMBOL(atomic_dec_and_lock);
 EXPORT_SYMBOL(do_BUG);
 #endif
 
-#if defined(CONFIG_SONYPI) || defined(CONFIG_SONYPI_MODULE)
-extern int is_sony_vaio_laptop;
 EXPORT_SYMBOL(is_sony_vaio_laptop);
-#endif
 

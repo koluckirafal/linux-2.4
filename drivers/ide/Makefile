@@ -69,7 +69,7 @@ ide-obj-$(CONFIG_BLK_DEV_MPC8xx_IDE)	+= ide-m8xx.o
 
 # The virtualised raid layers MUST come after the ide itself or bad stuff
 # will happen.
-obj-$(CONFIG_BLK_DEV_ATARAID)	+= ataraid.o
+obj-$(CONFIG_BLK_DEV_ATARAID)		+= ataraid.o
 obj-$(CONFIG_BLK_DEV_ATARAID_PDC)	+= pdcraid.o
 obj-$(CONFIG_BLK_DEV_ATARAID_HPT)	+= hptraid.o
 

@@ -106,6 +106,8 @@
 #include <asm/uaccess.h>
 #include <asm/bitops.h>
 
+#include <linux/speakup.h>
+
 #include "console_macros.h"
 
 
@@ -153,6 +155,7 @@ static void set_cursor(int currcons);
 static void hide_cursor(int currcons);
 static void unblank_screen_t(unsigned long dummy);
 static void console_callback(void *ignored);
+
 
 static int printable;		/* Is console ready for printing? */
 
@@ -399,20 +402,28 @@ void invert_screen(int currcons, int offset, int count, int viewed)
 	else {
 		u16 *q = p;
 		int cnt = count;
+		u16 a;
 
 		if (!can_do_color) {
-			while (cnt--) *q++ ^= 0x0800;
+			while (cnt--) {
+			    a = scr_readw(q);
+			    a ^= 0x0800;
+			    scr_writew(a, q);
+			    q++;
+			}
 		} else if (hi_font_mask == 0x100) {
 			while (cnt--) {
-				u16 a = *q;
+				a = scr_readw(q);
 				a = ((a) & 0x11ff) | (((a) & 0xe000) >> 4) | (((a) & 0x0e00) << 4);
-				*q++ = a;
+				scr_writew(a, q);
+				q++;
 			}
 		} else {
 			while (cnt--) {
-				u16 a = *q;
+				a = scr_readw(q);
 				a = ((a) & 0x88ff) | (((a) & 0x7000) >> 4) | (((a) & 0x0700) << 4);
-				*q++ = a;
+				scr_writew(a, q);
+				q++;
 			}
 		}
 	}
@@ -677,6 +688,8 @@ int vc_allocate(unsigned int currcons)	/* return 0 on success */
 	    screenbuf = (unsigned short *) q;
 	    kmalloced = 1;
 	    vc_init(currcons, video_num_lines, video_num_columns, 1);
+		speakup_allocate(currcons); /* speakup needs more too. */
+
 
 	    if (!pm_con) {
 		    pm_con = pm_register(PM_SYS_DEV,
@@ -903,6 +916,7 @@ static void lf(int currcons)
 		pos += video_size_row;
 	}
 	need_wrap = 0;
+	speakup_con_write(currcons, "\n",1);
 }
 
 static void ri(int currcons)
@@ -929,8 +943,9 @@ static inline void bs(int currcons)
 {
 	if (x) {
 		pos -= 2;
-		x--;
 		need_wrap = 0;
+		x--;
+		speakup_bs(currcons);
 	}
 }
 
@@ -1424,7 +1439,10 @@ static void reset_terminal(int currcons, int do_clear)
 	tab_stop[1]	=
 	tab_stop[2]	=
 	tab_stop[3]	=
-	tab_stop[4]	= 0x01010101;
+	tab_stop[4]	=
+	tab_stop[5]	=
+	tab_stop[6]	=
+	tab_stop[7]	= 0x01010101;
 
 	bell_pitch = DEFAULT_BELL_PITCH;
 	bell_duration = DEFAULT_BELL_DURATION;
@@ -1671,7 +1689,12 @@ static void do_con_trol(struct tty_struct *tty, unsigned int currcons, int c)
 			if (par[0]) par[0]--;
 			gotoxay(currcons,x,par[0]);
 			return;
-		case 'H': case 'f':
+		case 'f':
+			if (par[0]) par[0]--;
+			if (par[1]) par[1]--;
+			gotoxay(currcons,par[1],par[0]);
+			return;
+		case 'H':
 			if (par[0]) par[0]--;
 			if (par[1]) par[1]--;
 			gotoxay(currcons,par[1],par[0]);
@@ -1703,7 +1726,10 @@ static void do_con_trol(struct tty_struct *tty, unsigned int currcons, int c)
 					tab_stop[1] =
 					tab_stop[2] =
 					tab_stop[3] =
-					tab_stop[4] = 0;
+					tab_stop[4] =
+					tab_stop[5] =
+					tab_stop[6] =
+					tab_stop[7] = 0;
 			}
 			return;
 		case 'm':
@@ -1839,7 +1865,7 @@ static int do_con_write(struct tty_struct * tty, int from_user,
 
 	if (in_interrupt())
 		return count;
-		
+
 	currcons = vt->vc_num;
 	if (!vc_cons_allocated(currcons)) {
 	    /* could this happen? */
@@ -1873,8 +1899,15 @@ again:
 	 * and therefore no access to userspace (and therefore sleeping)
 	 * will be needed.  The con_buf_sem serializes all tty based
 	 * console rendering and vcs write/read operations.  We hold
-	 * the console spinlock during the entire write.
+	 * the console semaphore during the entire write.
+	 *
+	 * If we are called during an IRQ that was naughty and we ignore
+	 * it. Arguably we could remember con_buf used so far and schedule
+	 * the I/O next write....
 	 */
+	 
+	if(in_interrupt())
+		return 0;
 
 	acquire_console_sem();
 
@@ -1948,6 +1981,7 @@ again:
 		if (vc_state == ESnormal && ok) {
 			/* Now try to find out how to display it */
 			tc = conv_uni_to_pc(vc_cons[currcons].d, tc);
+			
 			if ( tc == -4 ) {
                                 /* If we got -4 (not found) then see if we have
                                    defined a replacement character (U+FFFD) */
@@ -1973,6 +2007,7 @@ again:
 			}
 			if (decim)
 				insert_char(currcons, 1);
+			speakup_con_write(currcons, (char *) &tc,1);
 			scr_writew(himask ?
 				     ((attr << 8) & ~himask) + ((tc & 0x100) ? himask : 0) + (tc & 0xff) :
 				     (attr << 8) + tc,
@@ -2013,6 +2048,7 @@ out:
 
 		up(&con_buf_sem);
 	}
+	speakup_con_update(currcons);
 
 	return n;
 #undef FLUSH
@@ -2038,6 +2074,7 @@ static void console_callback(void *ignored)
 			/* we only changed when the console had already
 			   been allocated - a new console is not created
 			   in an interrupt routine */
+			speakup_con_update(want_console);
 		}
 		want_console = -1;
 	}
@@ -2109,6 +2146,7 @@ void vt_console_print(struct console *co, const char * b, unsigned count)
 
 	/* Contrived structure to try to emulate original need_wrap behaviour
 	 * Problems caused when we have need_wrap set on '\n' character */
+	speakup_con_write(currcons, b, count);
 	while (count--) {
 		c = *b++;
 		if (c == 10 || c == 13 || c == 8 || need_wrap) {
@@ -2153,6 +2191,7 @@ void vt_console_print(struct console *co, const char * b, unsigned count)
 		}
 	}
 	set_cursor(currcons);
+	speakup_con_update(currcons);
 
 	if (!oops_in_progress)
 		poke_blanked_console();
@@ -2493,6 +2532,8 @@ void __init con_init(void)
 	master_display_fg = vc_cons[currcons].d;
 	set_origin(currcons);
 	save_screen(currcons);
+	speakup_init(currcons);
+
 	gotoxy(currcons,x,y);
 	csi_J(currcons, 0);
 	update_screen(fg_console);
@@ -2722,7 +2763,6 @@ void unblank_screen(void)
 	currcons = fg_console;
 	if (vcmode != KD_TEXT)
 		return; /* but leave console_blanked != 0 */
-
 	console_timer.function = blank_screen;
 	if (blankinterval) {
 		mod_timer(&console_timer, jiffies + blankinterval);

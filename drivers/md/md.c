@@ -2152,7 +2152,7 @@ static int get_disk_info(mddev_t * mddev, void * arg)
 		return -EFAULT;
 
 	nr = info.number;
-	if (nr >= MD_SB_DISKS)
+	if (nr >= mddev->sb->raid_disks+mddev->sb->spare_disks)
 		return -EINVAL;
 
 	SET_FROM_SB(major);
@@ -3395,9 +3395,8 @@ recheck:
 	/*
 	 * Tune reconstruction:
 	 */
-	window = MAX_READAHEAD*(PAGE_SIZE/512);
-	printk(KERN_INFO "md: using %dk window, over a total of %d blocks.\n",
-	       window/2,max_sectors/2);
+	window = vm_max_readahead*(PAGE_SIZE/512);
+	printk(KERN_INFO "md: using %dk window, over a total of %d blocks.\n",window/2,max_sectors/2);
 
 	atomic_set(&mddev->recovery_active, 0);
 	init_waitqueue_head(&mddev->recovery_wait);
@@ -4036,4 +4035,4 @@ MD_EXPORT_SYMBOL(md_interrupt_thread);
 MD_EXPORT_SYMBOL(mddev_map);
 MD_EXPORT_SYMBOL(md_check_ordering);
 MD_EXPORT_SYMBOL(get_spare);
-
+MODULE_LICENSE("GPL");

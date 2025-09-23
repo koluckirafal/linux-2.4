@@ -66,6 +66,7 @@ static inline dma_addr_t pci_map_single(struct pci_dev *hwdev, void *ptr,
 {
 	if (direction == PCI_DMA_NONE)
 		BUG();
+	flush_write_buffers();
 	return virt_to_bus(ptr);
 }
 
@@ -104,6 +105,7 @@ static inline int pci_map_sg(struct pci_dev *hwdev, struct scatterlist *sg,
 {
 	if (direction == PCI_DMA_NONE)
 		BUG();
+	flush_write_buffers();
 	return nents;
 }
 
@@ -134,7 +136,7 @@ static inline void pci_dma_sync_single(struct pci_dev *hwdev,
 {
 	if (direction == PCI_DMA_NONE)
 		BUG();
-	/* Nothing to do */
+	flush_write_buffers();
 }
 
 /* Make physical memory consistent for a set of streaming
@@ -149,7 +151,7 @@ static inline void pci_dma_sync_sg(struct pci_dev *hwdev,
 {
 	if (direction == PCI_DMA_NONE)
 		BUG();
-	/* Nothing to do */
+	flush_write_buffers();
 }
 
 /* Return whether the given PCI device DMA address mask can

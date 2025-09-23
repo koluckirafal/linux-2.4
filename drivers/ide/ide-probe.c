@@ -779,7 +779,7 @@ static void init_gendisk (ide_hwif_t *hwif)
 		/* IDE can do up to 128K per request. */
 		*max_sect++ = 255;
 #endif
-		*max_ra++ = MAX_READAHEAD;
+		*max_ra++ = vm_max_readahead;
 	}
 
 	for (unit = 0; unit < units; ++unit)
@@ -928,4 +928,5 @@ void cleanup_module (void)
 {
 	ide_probe = NULL;
 }
+MODULE_LICENSE("GPL");
 #endif /* MODULE */

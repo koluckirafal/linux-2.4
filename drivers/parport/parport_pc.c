@@ -44,6 +44,7 @@
 #include <linux/config.h>
 #include <linux/module.h>
 #include <linux/init.h>
+#include <linux/kmod.h>
 #include <linux/sched.h>
 #include <linux/delay.h>
 #include <linux/errno.h>
@@ -61,6 +62,10 @@
 #include <linux/parport.h>
 #include <linux/parport_pc.h>
 #include <asm/parport.h>
+
+#if defined (CONFIG_PNPBIOS) || defined (CONFIG_PNPBIOS_MODULE)
+#include <linux/pnp_bios.h>
+#endif
 
 #define PARPORT_PC_MAX_PORTS PARPORT_MAX
 
@@ -2814,6 +2819,67 @@ parport_pc_find_isa_ports (int autoirq, int autodma)
 	return count;
 }
 
+#if defined (CONFIG_PNPBIOS) || defined (CONFIG_PNPBIOS_MODULE)
+
+#define UNSET(res)   ((res).flags & IORESOURCE_UNSET)
+
+int init_pnp040x(struct pci_dev *dev)
+{
+	int io,iohi,irq,dma;
+
+	printk(KERN_INFO
+		"parport: PnP BIOS reports device %s %s (node number 0x%x) is ",
+		dev->name, dev->slot_name, dev->devfn
+	);
+
+	if ( UNSET(dev->resource[0]) ) {
+		printk("not configured.\n");
+		return 0;
+	}
+	io  = dev->resource[0].start;
+	printk("configured to use io 0x%04x",io);
+	if ( UNSET(dev->resource[1]) ) {
+		iohi = 0;
+	} else {
+		iohi = dev->resource[1].start;
+		printk(", io 0x%04x",iohi);
+	}
+
+	if ( UNSET(dev->irq_resource[0]) ) {
+		irq = PARPORT_IRQ_NONE;
+	} else {
+		if ( dev->irq_resource[0].start == (unsigned long)-1 ) {
+			irq = PARPORT_IRQ_NONE;
+			printk(", irq disabled");
+		} else {
+			irq = dev->irq_resource[0].start;
+			printk(", irq %d",irq);
+		}
+	}
+
+	if ( UNSET(dev->dma_resource[0]) ) {
+		dma = PARPORT_DMA_NONE;
+	} else {
+		if ( dev->dma_resource[0].start == (unsigned long)-1 ) {
+			dma = PARPORT_DMA_NONE;
+			printk(", dma disabled");
+		} else {
+			dma = dev->dma_resource[0].start;
+			printk(", dma %d",dma);
+		}
+	}
+
+	printk("\n");
+
+	if (parport_pc_probe_port(io,iohi,irq,dma,NULL))
+		return 1;
+
+	return 0;
+}
+#undef UNSET
+
+#endif 
+
 /* This function is called by parport_pc_init if the user didn't
  * specify any ports to probe.  Its job is to find some ports.  Order
  * is important here -- we want ISA ports to be registered first,
@@ -2827,10 +2893,19 @@ parport_pc_find_isa_ports (int autoirq, int autodma)
 static int __init parport_pc_find_ports (int autoirq, int autodma)
 {
 	int count = 0, r;
+	struct pci_dev *dev;
 
 #ifdef CONFIG_PARPORT_PC_SUPERIO
 	detect_and_report_winbond ();
 	detect_and_report_smsc ();
+#endif
+
+#if defined (CONFIG_PNPBIOS) || defined (CONFIG_PNPBIOS_MODULE)
+	dev=NULL;
+	while ((dev=pnpbios_find_device("PNP0400",dev)))
+		count+=init_pnp040x(dev);
+        while ((dev=pnpbios_find_device("PNP0401",dev)))
+                count+=init_pnp040x(dev);
 #endif
 
 	/* Onboard SuperIO chipsets that show themselves on the PCI bus. */
@@ -2884,6 +2959,8 @@ static const char *dma[PARPORT_PC_MAX_PORTS] = { NULL, };
 
 MODULE_AUTHOR("Phil Blundell, Tim Waugh, others");
 MODULE_DESCRIPTION("PC-style parallel port driver");
+MODULE_LICENSE("GPL");
+
 MODULE_PARM_DESC(io, "Base I/O address (SPP regs)");
 MODULE_PARM(io, "1-" __MODULE_STRING(PARPORT_PC_MAX_PORTS) "i");
 MODULE_PARM_DESC(io_hi, "Base I/O address (ECR)");

@@ -351,7 +351,7 @@ extern const char *const scsi_device_types[MAX_SCSI_DEVICE_CODE];
 #define DRIVER_MASK         0x0f
 #define SUGGEST_MASK        0xf0
 
-#define MAX_COMMAND_SIZE    12
+#define MAX_COMMAND_SIZE    16
 #define SCSI_SENSE_BUFFERSIZE   64
 
 /*

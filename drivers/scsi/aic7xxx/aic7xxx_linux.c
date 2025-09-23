@@ -786,15 +786,17 @@ ahc_dmamem_alloc(struct ahc_softc *ahc, bus_dma_tag_t dmat, void** vaddr,
 	 * address).  For this reason, we have to reset
 	 * our dma mask when doing allocations.
 	 */
+	if(ahc->dev_softc)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,3)
-	pci_set_dma_mask(ahc->dev_softc, 0xFFFFFFFF);
+		pci_set_dma_mask(ahc->dev_softc, 0xFFFFFFFF);
 #else
-	ahc->dev_softc->dma_mask = 0xFFFFFFFF;
+		ahc->dev_softc->dma_mask = 0xFFFFFFFF;
 #endif
 	*vaddr = pci_alloc_consistent(ahc->dev_softc,
 				      dmat->maxsize, &map->bus_addr);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,3)
-	pci_set_dma_mask(ahc->dev_softc, ahc->platform_data->hw_dma_mask);
+	if(ahc->dev_softc)
+		pci_set_dma_mask(ahc->dev_softc, ahc->platform_data->hw_dma_mask);
 #else
 	ahc->dev_softc->dma_mask = ahc->platform_data->hw_dma_mask;
 #endif

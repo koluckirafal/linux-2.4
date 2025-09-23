@@ -118,7 +118,7 @@ struct ufs_sb_private_info {
 struct ufs_sb_info {
 	struct ufs_sb_private_info * s_uspi;	
 	struct ufs_csum	* s_csp[UFS_MAXCSBUFS];
-	unsigned s_swab;
+	char s_bytesex;		/* XXX alignment is bad */
 	unsigned s_flags;
 	struct buffer_head ** s_ucg;
 	struct ufs_cg_private_info * s_ucpi[UFS_MAX_GROUP_LOADED]; 

@@ -7,8 +7,10 @@
 #include <linux/slab.h>
 #include <asm/io.h>
 #include <linux/pm.h>
-#include <linux/keyboard.h>
 #include <asm/keyboard.h>
+#include <asm/system.h>
+
+unsigned long dmi_broken;
 
 struct dmi_header
 {
@@ -85,7 +87,7 @@ static int __init dmi_table(u32 base, int len, int num, void (*decode)(struct dm
 }
 
 
-int __init dmi_iterate(void (*decode)(struct dmi_header *))
+static int __init dmi_iterate(void (*decode)(struct dmi_header *))
 {
 	unsigned char buf[20];
 	long fp=0xE0000L;
@@ -313,14 +315,12 @@ static __init int broken_apm_power(struct dmi_blacklist *d)
 	return 0;
 }		
 
-#if defined(CONFIG_SONYPI) || defined(CONFIG_SONYPI_MODULE)
 /*
- * Check for a Sony Vaio system in order to enable the use of
- * the sonypi driver (we don't want this driver to be used on
- * other systems, even if they have the good PCI IDs).
+ * Check for a Sony Vaio system
  *
- * This one isn't a bug detect for those who asked, we simply want to
- * activate Sony specific goodies like the camera and jogdial..
+ * On a Sony system we want to enable the use of the sonypi
+ * driver for Sony-specific goodies like the camera and jogdial.
+ * We also want to avoid using certain functions of the PnP BIOS.
  */
 int is_sony_vaio_laptop;
 
@@ -333,7 +333,6 @@ static __init int sony_vaio_laptop(struct dmi_blacklist *d)
 	}
 	return 0;
 }
-#endif
 
 /*
  * This bios swaps the APM minute reporting bytes over (Many sony laptops
@@ -365,13 +364,41 @@ static __init int broken_pirq(struct dmi_blacklist *d)
 }
 
 /*
+ * ASUS K7V-RM has broken ACPI table defining sleep modes
+ */
+
+static __init int broken_acpi_Sx(struct dmi_blacklist *d)
+{
+	printk(KERN_WARNING "Detected ASUS mainboard with broken ACPI sleep table\n");
+	dmi_broken |= BROKEN_ACPI_Sx;
+	return 0;
+}
+
+/*
+ * Toshiba keyboard likes to repeat keys when they are not repeated.
+ */
+
+static __init int broken_toshiba_keyboard(struct dmi_blacklist *d)
+{
+	printk(KERN_WARNING "Toshiba with broken keyboard detected. If your keyboard sometimes generates 3 keypresses instead of one, contact pavel@ucw.cz\n");
+	return 0;
+}
+
+/*
+ * Toshiba fails to preserve interrupts over S1
+ */
+
+static __init int init_ints_after_s1(struct dmi_blacklist *d)
+{
+	printk(KERN_WARNING "Toshiba with broken S1 detected.\n");
+	dmi_broken |= BROKEN_INIT_AFTER_S1;
+	return 0;
+}
+
+/*
  * Some Bioses enable the PS/2 mouse (touchpad) at resume, even if it
  * was disabled before the suspend. Linux gets terribly confused by that.
  */
-
-typedef void (pm_kbd_func) (void);
-extern pm_kbd_func *pm_kbd_request_override;
-
 static __init int broken_ps2_resume(struct dmi_blacklist *d)
 {
 #ifdef CONFIG_VT
@@ -380,10 +407,9 @@ static __init int broken_ps2_resume(struct dmi_blacklist *d)
 		pm_kbd_request_override = pckbd_pm_resume;
 		printk(KERN_INFO "%s machine detected. Mousepad Resume Bug workaround enabled.\n", d->ident);
 	}
-#endif	
+#endif
 	return 0;
 }
-
 
 
 /*
@@ -459,13 +485,11 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 			MATCH(DMI_BIOS_VENDOR,"SystemSoft"),
 			MATCH(DMI_BIOS_VERSION,"Version R2.08")
 			} },
-#if defined(CONFIG_SONYPI) || defined(CONFIG_SONYPI_MODULE)
 	{ sony_vaio_laptop, "Sony Vaio", { /* This is a Sony Vaio laptop */
 			MATCH(DMI_SYS_VENDOR, "Sony Corporation"),
 			MATCH(DMI_PRODUCT_NAME, "PCG-"),
 			NO_MATCH, NO_MATCH,
 			} },
-#endif
 	{ swab_apm_power_in_minutes, "Sony VAIO", { /* Handle problems with APM on Sony Vaio PCG-N505X(DE) */
 			MATCH(DMI_BIOS_VENDOR, "Phoenix Technologies LTD"),
 			MATCH(DMI_BIOS_VERSION, "R0206H"),
@@ -543,7 +567,19 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 			MATCH(DMI_PRODUCT_NAME, "Dell PowerEdge 8450"),
 			NO_MATCH, NO_MATCH, NO_MATCH
 			} },
-
+	{ broken_acpi_Sx, "ASUS K7V-RM", {		/* Bad ACPI Sx table */
+			MATCH(DMI_BIOS_VERSION,"ASUS K7V-RM ACPI BIOS Revision 1003A"),
+			MATCH(DMI_BOARD_NAME, "<K7V-RM>"),
+			NO_MATCH, NO_MATCH
+			} },
+	{ broken_toshiba_keyboard, "Toshiba Satellite 4030cdt", { /* Keyboard generates spurious repeats */
+			MATCH(DMI_PRODUCT_NAME, "S4030CDT/4.3"),
+			NO_MATCH, NO_MATCH, NO_MATCH
+			} },
+	{ init_ints_after_s1, "Toshiba Satellite 4030cdt", { /* Reinitialization of 8259 is needed after S1 resume */
+			MATCH(DMI_PRODUCT_NAME, "S4030CDT/4.3"),
+			NO_MATCH, NO_MATCH, NO_MATCH
+			} },
 	{ NULL, }
 };
 	
@@ -646,12 +682,10 @@ static void __init dmi_decode(struct dmi_header *dm)
 	}
 }
 
-static int __init dmi_scan_machine(void)
+int __init dmi_scan_machine(void)
 {
 	int err = dmi_iterate(dmi_decode);
 	if(err == 0)
 		dmi_check_blacklist();
 	return err;
 }
-
-module_init(dmi_scan_machine);

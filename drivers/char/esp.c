@@ -2203,6 +2203,7 @@ static int block_til_ready(struct tty_struct *tty, struct file * filp,
 	DECLARE_WAITQUEUE(wait, current);
 	int		retval;
 	int		do_clocal = 0;
+	unsigned long	flags;
 
 	/*
 	 * If the device is in the middle of being closed, then block
@@ -2274,12 +2275,14 @@ static int block_til_ready(struct tty_struct *tty, struct file * filp,
 	printk("block_til_ready before block: ttys%d, count = %d\n",
 	       info->line, info->count);
 #endif
+	save_flags(flags);
 	cli();
 	if (!tty_hung_up_p(filp)) 
 		info->count--;
-	sti();
+	restore_flags(flags);
 	info->blocked_open++;
 	while (1) {
+		save_flags(flags);
 		cli();
 		if (!(info->flags & ASYNC_CALLOUT_ACTIVE) &&
 			(tty->termios->c_cflag & CBAUD)) {
@@ -2293,7 +2296,7 @@ static int block_til_ready(struct tty_struct *tty, struct file * filp,
 			serial_out(info, UART_ESI_CMD2,
 				scratch | UART_MCR_DTR | UART_MCR_RTS);
 		}
-		sti();
+		restore_flags(flags);
 		set_current_state(TASK_INTERRUPTIBLE);
 		if (tty_hung_up_p(filp) ||
 		    !(info->flags & ASYNC_INITIALIZED)) {

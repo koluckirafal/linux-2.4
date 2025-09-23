@@ -1766,13 +1766,11 @@ static void change_speed(struct async_struct *info,
 		if (I_IGNPAR(info->tty))
 			info->ignore_status_mask |= UART_LSR_OE;
 	}
-#if 0 /* breaks serial console during boot stage */
 	/*
 	 * !!! ignore all characters if CREAD is not set
 	 */
 	if ((cflag & CREAD) == 0)
 		info->ignore_status_mask |= UART_LSR_DR;
-#endif
 	save_flags(flags); cli();
 	if (uart_config[info->state->type].flags & UART_STARTECH) {
 		serial_outp(info, UART_LCR, 0xBF);
@@ -4136,7 +4134,7 @@ pci_inteli960ni_fn(struct pci_dev *dev,
 {
 	unsigned long oldval;
 	
-	if (!(pci_get_subdevice(dev) & 0x1000))
+	if (!(pci_get_subvendor(dev) & 0x1000))
 		return(-1);
 
 	if (!enable) /* is there something to deinit? */
@@ -4882,8 +4880,11 @@ static struct pci_device_id serial_pci_tbl[] __devinitdata = {
 
 MODULE_DEVICE_TABLE(pci, serial_pci_tbl);
 
+/* serial_pci_driver_name[] gets truncated to ""  if the pci probe fails */
+static char serial_pci_driver_name[] = "serial";
+
 static struct pci_driver serial_pci_driver = {
-       name:           "serial",
+       name:           serial_pci_driver_name,
        probe:          serial_init_one,
        remove:	       serial_remove_one,
        id_table:       serial_pci_tbl,
@@ -4908,7 +4909,7 @@ static void __devinit probe_serial_pci(void)
 	 * not to attempt to unregister the driver later
 	 */
 	if (pci_module_init (&serial_pci_driver) != 0)
-		serial_pci_driver.name = "";
+		serial_pci_driver.name[0] = 0;
 
 #ifdef SERIAL_DEBUG_PCI
 	printk(KERN_DEBUG "Leaving probe_serial_pci() (probe finished)\n");
@@ -5386,6 +5387,7 @@ static int __init rs_init(void)
 #endif
 	serial_driver.major = TTY_MAJOR;
 	serial_driver.minor_start = 64 + SERIAL_DEV_OFFSET;
+	serial_driver.name_base = SERIAL_DEV_OFFSET;
 	serial_driver.num = NR_PORTS;
 	serial_driver.type = TTY_DRIVER_TYPE_SERIAL;
 	serial_driver.subtype = SERIAL_TYPE_NORMAL;
@@ -5765,7 +5767,7 @@ static inline void wait_for_xmitr(struct async_struct *info)
  *	Print a string to the serial port trying not to disturb
  *	any possible real use of the port...
  *
- *	The console must be locked when we get here.
+ *	The console_lock must be held when we get here.
  */
 static void serial_console_write(struct console *co, const char *s,
 				unsigned count)

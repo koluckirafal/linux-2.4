@@ -748,6 +748,13 @@ P:	Tigran Aivazian
 M:	tigran@veritas.com
 S:	Maintained
 
+INTERMEZZO FILE SYSTEM
+P:	Peter J. Braam
+M:      braam@clusterfs.com
+W:      http://www.inter-mezzo.org/
+L:      intermezzo-discuss@lists.sourceforge.net
+S:      Maintained
+
 IP MASQUERADING:
 P:	Juanjo Ciarlante
 M:	jjciarla@raiz.uncu.edu.ar
@@ -874,6 +881,13 @@ M:	benh@kernel.crashing.org
 W:	http://www.linuxppc.org/
 L:	linuxppc-dev@lists.linuxppc.org
 S:	Maintained
+
+LINUX FOR 64BIT POWERPC
+P:	David Engebretsen
+M:	engebret@us.ibm.com
+W:	http://linuxppc64.org
+L:	linuxppc64-dev@lists.linuxppc.org
+S:	Supported
 
 LOGICAL DISK MANAGER SUPPORT (LDM, Windows 2000/XP Dynamic Disks)
 P:	Richard Russon (FlatCap)
@@ -1053,6 +1067,12 @@ M:     Andreas Mohr <100.30936@germany.net>
 L:     linux-net@vger.kernel.org
 S:     Maintained
 
+NINJA SCSI-3 / NINJA SCSI-32Bi PCMCIA SCSI HOST ADAPTER DRIVER
+P:	YOKOTA Hiroshi
+M:	yokota@netlab.is.tsukuba.ac.jp
+W:	http://www.netlab.is.tsukuba.ac.jp/~yokota/izumi/ninja/
+S:	Maintained
+
 NON-IDE/NON-SCSI CDROM DRIVERS [GENERAL] (come on, crew - mark your responsibility)
 P:	Eberhard Moenkeberg
 M:	emoenke@gwdg.de
@@ -1158,6 +1178,11 @@ PPP PROTOCOL DRIVERS AND COMPRESSORS
 P:	Paul Mackerras
 M:	paulus@samba.org
 L:	linux-ppp@vger.kernel.org
+S:	Maintained
+
+PPP OVER ATM (RFC 2364)
+P:	Mitchell Blank Jr
+M:	mitch@sfgoth.com
 S:	Maintained
 
 PPP OVER ETHERNET
@@ -1399,6 +1424,13 @@ L:	linux-tr@linuxtr.net
 W:	http://www.linuxtr.net
 S:	Maintained
 
+TOSHIBA SMM DRIVER
+P:	Jonathan Buzzard
+M:	jonathan@buzzard.org.uk
+L:	tlinux-users@tce.toshiba-dme.co.jp
+W:	http://www.buzzard.org.uk/toshiba/
+S:	Maintained
+
 TRIDENT 4DWAVE/SIS 7018 PCI AUDIO CORE
 P:      Ollie Lho  
 M:      ollie@sis.com.tw
@@ -1604,6 +1636,14 @@ L:	linux-usb-users@lists.sourceforge.net
 L:	linux-usb-devel@lists.sourceforge.net
 W:	http://usb.in.tum.de
 S:	Maintained
+
+USER-MODE PORT
+P:	Jeff Dike
+M:	jdike@karaya.com
+L:	user-mode-linux-devel@lists.sourceforge.net
+L:	user-mode-linux-user@lists.sourceforge.net
+W:	http://user-mode-linux.sourceforge.net
+S:	Maintained
 	
 VFAT FILESYSTEM:
 P:	Gordon Chaffee
@@ -1662,11 +1702,24 @@ P:	Ingo Molnar
 M:	mingo@redhat.com
 S:	Maintained
 
+X86-64 port
+P:	Andi Kleen
+M:	ak@suse.de
+L:	discuss@x86-64.org
+W:	http://www.x86-64.org
+S:	Maintained
+
 YAM DRIVER FOR AX.25
 P:	Jean-Paul Roubelat
 M:	jpr@f6fbb.org
 L:	linux-hams@vger.kernel.org
 S:	Maintained
+
+YMFPCI YAMAHA PCI SOUND
+P:     Pete Zaitcev
+M:     zaitcev@yahoo.com
+L:     linux-kernel@vger.kernel.org
+S:     Maintained
 
 Z85230 SYNCHRONOUS DRIVER
 P:	Alan Cox

@@ -578,11 +578,18 @@ static int apm_set_power_state(u_short state)
 #ifdef CONFIG_APM_CPU_IDLE
 static int apm_do_idle(void)
 {
-	u32	dummy;
+	u32	eax;
 
-	if (apm_bios_call_simple(APM_FUNC_IDLE, 0, 0, &dummy))
+	if (apm_bios_call_simple(APM_FUNC_IDLE, 0, 0, &eax))
+	{
+		static unsigned long t;
+		if(time_after(jiffies, t+10*HZ))
+		{
+			printk(KERN_DEBUG "apm_do_idle failed (%d)\n", (eax >> 8) & 0xff);
+			t = jiffies;
+		}
 		return 0;
-
+	}
 #ifdef ALWAYS_CALL_BUSY
 	clock_slowed = 1;
 #else
@@ -1159,7 +1166,12 @@ static void apm_mainloop(void)
 		if (apm_do_idle()) {
 			unsigned long start = jiffies;
 			while ((!exit_kapmd) && system_idle()) {
-				apm_do_idle();
+				if(!apm_do_idle())
+				{
+					/* Idle request failed.. go to 
+					   sleep for a bit */
+					schedule_timeout(HZ);
+				}
 				if ((jiffies - start) > APM_CHECK_TIMEOUT) {
 					apm_event_handler();
 					start = jiffies;

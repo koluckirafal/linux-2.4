@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.prep_pci.c 1.26 09/08/01 15:47:42 paulus
+ * BK Id: SCCS/s.prep_pci.c 1.28 09/15/01 09:13:52 trini
  */
 /*
  * PReP pci functions.
@@ -1223,7 +1223,8 @@ prep_find_bridges(void)
 	hose->first_busno = 0;
 	hose->last_busno = 0xff;
 	hose->pci_mem_offset = PREP_ISA_MEM_BASE;
-	hose->io_base_virt = (void *)PREP_ISA_IO_BASE;
+	hose->io_base_phys = (void *)PREP_ISA_IO_BASE;
+	hose->io_base_virt = (void *)0x80000000; /* see prep_map_io() */
 	prep_init_resource(&hose->io_resource, 0, 0x0fffffff, IORESOURCE_IO);
 	prep_init_resource(&hose->mem_resources[0], 0xc0000000, 0xfeffffff,
 			   IORESOURCE_MEM);

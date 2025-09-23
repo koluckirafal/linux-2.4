@@ -170,7 +170,13 @@ static inline void forget_original_parent(struct task_struct * father)
 			/* We dont want people slaying init */
 			p->exit_signal = SIGCHLD;
 			p->self_exec_id++;
-			p->p_opptr = reaper;
+
+			/* Make sure we're not reparenting to ourselves */
+			if (p == reaper)
+				p->p_opptr = child_reaper;
+			else
+				p->p_opptr = reaper;
+
 			if (p->pdeath_signal) send_sig(p->pdeath_signal, p, 0);
 		}
 	}

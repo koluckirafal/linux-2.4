@@ -86,7 +86,7 @@ static int reiserfs_sync_file(
       BUG ();
 
   n_err = fsync_inode_buffers(p_s_inode) ;
-  n_err |= fsync_inode_data_buffers(p_s_inode);
+  // NOT YET // n_err |= fsync_inode_data_buffers(p_s_inode);
   /* commit the current transaction to flush any metadata
   ** changes.  sys_fsync takes care of flushing the dirty pages for us
   */

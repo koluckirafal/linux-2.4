@@ -501,6 +501,24 @@ static void timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 
 		count = inb_p(0x40);    /* read the latched count */
 		count |= inb(0x40) << 8;
+		
+
+                /* VIA686a test code... reset the latch if count > max */
+                if (count > LATCH) {
+                        static int last_whine;
+                        outb_p(0x34, 0x43);   
+                        outb_p(LATCH & 0xff, 0x40);
+                        outb(LATCH >> 8, 0x40);
+                        count = LATCH - 1;
+                        if(time_after(jiffies, last_whine))
+                        {
+                                printk(KERN_WARNING "probable hardware bug: clock timer configuration lost - probably a VIA686a motherboard.\n");
+                                printk(KERN_WARNING "probable hardware bug: restoring chip configuration.\n");
+                                last_whine = jiffies + HZ;
+                        }                       
+                }                               
+
+		
 		spin_unlock(&i8253_lock);
 
 		count = ((LATCH-1) - count) * TICK_SIZE;

@@ -14,7 +14,6 @@
 #include <linux/vmalloc.h>
 #include <linux/pagemap.h>
 #include <linux/shm.h>
-#include <linux/compiler.h>
 
 #include <asm/pgtable.h>
 
@@ -31,6 +30,25 @@ static const char Unused_offset[] = "Unused swap offset entry ";
 struct swap_list_t swap_list = {-1, -1};
 
 struct swap_info_struct swap_info[MAX_SWAPFILES];
+
+/*
+ * When swap space gets filled up, we will set this flag.
+ * This will make do_swap_page(), in the page fault path,
+ * free swap entries on swapin so we'll reclaim swap space
+ * in order to be able to swap something out.
+ *
+ * At the moment we start reclaiming when swap usage goes
+ * over 80% of swap space.
+ *
+ * XXX: Random numbers, fixme.
+ */
+#define SWAP_FULL_PCT 80
+int vm_swap_full (void)
+{
+	int swap_used = total_swap_pages - nr_swap_pages;
+
+	return swap_used * 100 > total_swap_pages * SWAP_FULL_PCT;
+}
 
 #define SWAPFILE_CLUSTER 256
 
@@ -87,7 +105,8 @@ static inline int scan_swap_map(struct swap_info_struct *si)
 			si->lowest_bit = si->max;
 			si->highest_bit = 0;
 		}
-		si->swap_map[offset] = 1;
+		/* Initial count 1 for user reference + 1 for swap cache */
+		si->swap_map[offset] = 2;
 		nr_swap_pages--;
 		si->cluster_next = offset+1;
 		return offset;
@@ -97,6 +116,11 @@ static inline int scan_swap_map(struct swap_info_struct *si)
 	return 0;
 }
 
+/*
+ * Callers of get_swap_page must hold swap_list_lock across the call,
+ * and across the following add_to_swap_cache, to guard against races
+ * with read_swap_cache_async.
+ */
 swp_entry_t get_swap_page(void)
 {
 	struct swap_info_struct * p;
@@ -105,7 +129,6 @@ swp_entry_t get_swap_page(void)
 	int type, wrapped = 0;
 
 	entry.val = 0;	/* Out of memory */
-	swap_list_lock();
 	type = swap_list.next;
 	if (type < 0)
 		goto out;
@@ -141,7 +164,6 @@ swp_entry_t get_swap_page(void)
 				goto out;	/* out of swap space */
 	}
 out:
-	swap_list_unlock();
 	return entry;
 }
 
@@ -215,9 +237,9 @@ static inline void unuse_pte(struct vm_area_struct * vma, unsigned long address,
 {
 	pte_t pte = *dir;
 
-	if (likely(pte_to_swp_entry(pte).val != entry.val))
+	if (pte_to_swp_entry(pte).val != entry.val)
 		return;
-	if (unlikely(pte_none(pte) || pte_present(pte)))
+	if (pte_none(pte) || pte_present(pte))
 		return;
 	get_page(page);
 	set_pte(dir, pte_mkold(mk_pte(page, vma->vm_page_prot)));
@@ -553,8 +575,14 @@ asmlinkage long sys_swapoff(const char * specialfile)
 	for (type = swap_list.head; type >= 0; type = swap_info[type].next) {
 		p = swap_info + type;
 		if ((p->flags & SWP_WRITEOK) == SWP_WRITEOK) {
-			if (p->swap_file == nd.dentry)
-			  break;
+			if (p->swap_file) {
+				if (p->swap_file == nd.dentry)
+				  break;
+			} else {
+				if (S_ISBLK(nd.dentry->d_inode->i_mode)
+				    && (p->swap_device == nd.dentry->d_inode->i_rdev))
+				  break;
+			}
 		}
 		prev = type;
 	}
@@ -756,23 +784,28 @@ asmlinkage long sys_swapon(const char * specialfile, int swap_flags)
 		if (!dev || (blk_size[MAJOR(dev)] &&
 		     !blk_size[MAJOR(dev)][MINOR(dev)]))
 			goto bad_swap;
+		error = -EBUSY;
+		for (i = 0 ; i < nr_swapfiles ; i++) {
+			if (i == type)
+				continue;
+			if (dev == swap_info[i].swap_device)
+				goto bad_swap;
+		}
 		swapfilesize = 0;
 		if (blk_size[MAJOR(dev)])
 			swapfilesize = blk_size[MAJOR(dev)][MINOR(dev)]
 				>> (PAGE_SHIFT - 10);
-	} else if (S_ISREG(swap_inode->i_mode))
+	} else if (S_ISREG(swap_inode->i_mode)) {
+		error = -EBUSY;
+		for (i = 0 ; i < nr_swapfiles ; i++) {
+			if (i == type || !swap_info[i].swap_file)
+				continue;
+			if (swap_inode == swap_info[i].swap_file->d_inode)
+				goto bad_swap;
+		}
 		swapfilesize = swap_inode->i_size >> PAGE_SHIFT;
-	else
+	} else
 		goto bad_swap;
-
-	error = -EBUSY;
-	for (i = 0 ; i < nr_swapfiles ; i++) {
-		struct swap_info_struct *q = &swap_info[i];
-		if (i == type || !q->swap_file)
-			continue;
-		if (swap_inode->i_mapping == q->swap_file->d_inode->i_mapping)
-			goto bad_swap;
-	}
 
 	swap_header = (void *) __get_free_page(GFP_USER);
 	if (!swap_header) {
