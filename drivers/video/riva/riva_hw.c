@@ -1251,6 +1251,7 @@ static void CalcStateExt
     state->pitch1   =
     state->pitch2   =
     state->pitch3   = pixelDepth * width;
+    /* printk("pitch is %d\n",state->pitch3); */
 }
 /*
  * Load fixed function state and pre-calculated/stored state.

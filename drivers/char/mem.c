@@ -623,6 +623,7 @@ int __init chr_dev_init(void)
 	mda_console_init();
 #endif
 	tty_init();
+	irq_init();
 #ifdef CONFIG_M68K_PRINTER
 	lp_m68k_init();
 #endif

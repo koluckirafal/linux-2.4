@@ -143,6 +143,7 @@ void matrox_cfbX_init(WPMINFO struct display* p) {
 	ACCESS_FBINFO(accel.m_opmode) = mopmode;
 }
 
+
 static void matrox_cfbX_bmove(struct display* p, int sy, int sx, int dy, int dx, int height, int width) {
 	int pixx = p->var.xres_virtual, start, end;
 	CRITFLAGS
@@ -158,6 +159,84 @@ static void matrox_cfbX_bmove(struct display* p, int sy, int sx, int dy, int dx,
 	height *= fontheight(p);
 	sy *= fontheight(p);
 	dy *= fontheight(p);
+	if ((dy < sy) || ((dy == sy) && (dx <= sx))) {
+		mga_fifo(2);
+		mga_outl(M_DWGCTL, M_DWG_BITBLT | M_DWG_SHIFTZERO | M_DWG_SGNZERO |
+			 M_DWG_BFCOL | M_DWG_REPLACE);
+		mga_outl(M_AR5, pixx);
+		width--;
+		start = sy*pixx+sx+curr_ydstorg(MINFO);
+		end = start+width;
+	} else {
+		mga_fifo(3);
+		mga_outl(M_DWGCTL, M_DWG_BITBLT | M_DWG_SHIFTZERO | M_DWG_BFCOL | M_DWG_REPLACE);
+		mga_outl(M_SGN, 5);
+		mga_outl(M_AR5, -pixx);
+		width--;
+		end = (sy+height-1)*pixx+sx+curr_ydstorg(MINFO);
+		start = end+width;
+		dy += height-1;
+	}
+	mga_fifo(4);
+	mga_outl(M_AR0, end);
+	mga_outl(M_AR3, start);
+	mga_outl(M_FXBNDRY, ((dx+width)<<16) | dx);
+	mga_ydstlen(dy, height);
+	WaitTillIdle();
+
+	CRITEND
+}
+
+
+int matrox_blittemplate(struct matrox_fb_info* minfo,
+			 u_int32_t fgx, u_int32_t bgx, 
+			 int sy, int sx, 
+			 int height, int width, 
+			 int offset, char* data, int pitch,
+			 unsigned char rop3)	
+{
+	u_int32_t ar0;
+	int i;
+
+	return -EINVAL;
+
+	CRITFLAGS
+
+	DBG_HEAVY("matrox_cfbX_putc");
+
+	CRITBEGIN
+
+	mga_fifo(7);
+	ar0 = width - 1;
+	mga_outl(M_FXBNDRY, ((sx+ar0)<<16) | sx);
+	mga_outl(M_DWGCTL, M_DWG_ILOAD | M_DWG_SGNZERO | M_DWG_SHIFTZERO | M_DWG_BMONOWF | M_DWG_REPLACE);
+	mga_outl(M_FCOL, fgx);
+	mga_outl(M_BCOL, bgx);
+	mga_outl(M_AR5, 0);
+	mga_outl(M_AR3, 0);
+	mga_outl(M_AR0, ar0);
+	mga_ydstlen(sy, height);
+	
+	for (i = height; i > 0; i--) {
+	  mga_memcpy_toio(ACCESS_FBINFO(mmio.vbase), 0, data, (width+7)>>8);
+	  data+=pitch;
+	}
+	WaitTillIdle();
+	CRITEND
+	return 0;  
+}
+
+void matrox_rectcopy(struct matrox_fb_info* minfo, 
+		     int sy, int sx, int dy, int dx, int height, int width,
+		     int vxres) {
+	int pixx = vxres;
+	int start, end;
+	CRITFLAGS
+
+	DBG("matrox_cfbX_bmove")
+
+	CRITBEGIN
+
 	if ((dy < sy) || ((dy == sy) && (dx <= sx))) {
 		mga_fifo(2);
 		mga_outl(M_DWGCTL, M_DWG_BITBLT | M_DWG_SHIFTZERO | M_DWG_SGNZERO |
@@ -242,8 +321,8 @@ static void matrox_cfb4_bmove(struct display* p, int sy, int sx, int dy, int dx,
 }
 #endif
 
-static void matroxfb_accel_clear(WPMINFO u_int32_t color, int sy, int sx, int height,
-		int width) {
+void matroxfb_accel_clear(WPMINFO u_int32_t color, int sy, int sx, int height,
+			  int width) {
 	CRITFLAGS
 
 	DBG("matroxfb_accel_clear")
