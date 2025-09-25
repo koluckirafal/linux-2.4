@@ -1,35 +1,21 @@
 /*
- * Copyright 2000 by Hans Reiser, licensing governed by reiserfs/README
- *
- * Trivial changes by Alan Cox to remove EHASHCOLLISION for compatibility
- *
- * Trivial Changes:
- * Rights granted to Hans Reiser to redistribute under other terms providing
- * he accepts all liability including but not limited to patent, fitness
- * for purpose, and direct or indirect claims arising from failure to perform.
- *
- * NO WARRANTY
+ * Copyright 1996, 1997, 1998 Hans Reiser, see reiserfs/README for licensing and copyright details
  */
 
-#include <linux/config.h>
+#ifdef __KERNEL__
+
 #include <linux/sched.h>
-#include <linux/bitops.h>
 #include <linux/reiserfs_fs.h>
 #include <linux/smp_lock.h>
 
-				/* there should be an overview right
-                                   here, as there should be in every
-                                   conceptual grouping of code.  This
-                                   should be combined with dir.c and
-                                   called dir.c (naming will become
-                                   too large to be called one file in
-                                   a few years), stop senselessly
-                                   imitating the incoherent
-                                   structuring of code used by other
-                                   filesystems.  */
+#else
 
-#define INC_DIR_INODE_NLINK(i) if (i->i_nlink != 1) { i->i_nlink++; if (i->i_nlink >= REISERFS_LINK_MAX) i->i_nlink=1; }
-#define DEC_DIR_INODE_NLINK(i) if (i->i_nlink != 1) i->i_nlink--;
+#include "nokernel.h"
+
+#endif
+
+
+
 
 // directory item contains array of entry headers. This performs
 // binary search through that array
@@ -61,7 +47,7 @@ static int bin_search_in_dir_item (struct reiserfs_dir_entry * de, loff_t off)
 }
 
 
-// comment?  maybe something like set de to point to what the path points to?
+//
 static inline void set_de_item_location (struct reiserfs_dir_entry * de, struct path * path)
 {
     de->de_bh = get_last_bh (path);
@@ -113,17 +99,11 @@ static inline void store_de_entry_key (struct reiserfs_dir_entry * de)
 }
 
 
-/* We assign a key to each directory item, and place multiple entries
-in a single directory item.  A directory item has a key equal to the
-key of the first directory entry in it.
-
-This function first calls search_by_key, then, if item whose first
-entry matches is not found it looks for the entry inside directory
-item found by search_by_key. Fills the path to the entry, and to the
-entry position in the item 
-
-*/
-
+/* first calls search_by_key, then, if item is not found looks for the
+   entry inside directory item found by search_by_key. (We assign a
+   key to each directory item, and place multiple entries in a single
+   directory item.)  Fills the path to the entry, and to the entry
+   position in the item */
 /* The function is NOT SCHEDULE-SAFE! */
 int search_by_entry_key (struct super_block * sb, struct cpu_key * key,
 			 struct path * path, struct reiserfs_dir_entry * de)
@@ -133,11 +113,10 @@ int search_by_entry_key (struct super_block * sb, struct cpu_key * key,
     retval = search_item (sb, key, path);
     switch (retval) {
     case ITEM_NOT_FOUND:
-	if (!PATH_LAST_POSITION (path)) {
-	    reiserfs_warning ("vs-7000: search_by_entry_key: search_by_key returned item position == 0");
-	    pathrelse(path) ;
-	    return IO_ERROR ;
-	}
+#ifdef CONFIG_REISERFS_CHECK
+	if (!PATH_LAST_POSITION (path))
+	    reiserfs_panic (sb, "vs-7000: search_by_entry_key: search_by_key returned item position == 0");
+#endif /* CONFIG_REISERFS_CHECK */
 	PATH_LAST_POSITION (path) --;
 
     case ITEM_FOUND:
@@ -178,12 +157,6 @@ int search_by_entry_key (struct super_block * sb, struct cpu_key * key,
 
 
 /* Keyed 32-bit hash function using TEA in a Davis-Meyer function */
-
-/* The third component is hashed, and you can choose from more than
-   one hash function.  Per directory hashes are not yet implemented
-   but are thought about. This function should be moved to hashes.c
-   Jedi, please do so.  -Hans */
-
 static __u32 get_third_component (struct super_block * s, 
 				  const char * name, int len)
 {
@@ -227,10 +200,6 @@ static int reiserfs_match (struct reiserfs_dir_entry * de,
 
 
 /* de's de_bh, de_ih, de_deh, de_item_num, de_entry_num are set already */
-
-				/* used when hash collisions exist */
-
-
 static int linear_search_in_dir_item (struct cpu_key * key, struct reiserfs_dir_entry * de,
 				      const char * name, int namelen)
 {
@@ -362,7 +331,7 @@ struct dentry * reiserfs_lookup (struct inode * dir, struct dentry * dentry)
     reiserfs_check_lock_depth("lookup") ;
 
     if (dentry->d_name.len > REISERFS_MAX_NAME_LEN (dir->i_sb->s_blocksize))
-	return ERR_PTR(-ENAMETOOLONG);
+      return ERR_PTR(-ENAMETOOLONG);
 
     de.de_gen_number_bit_string = 0;
     retval = reiserfs_find_entry (dir, dentry->d_name.name, dentry->d_name.len, &path_to_entry, &de);
@@ -386,13 +355,8 @@ struct dentry * reiserfs_lookup (struct inode * dir, struct dentry * dentry)
 // at the ext2 code and comparing. It's subfunctions contain no code
 // used as a template unless they are so labeled.
 //
-
-/* add entry to the directory (entry can be hidden). 
-
-insert definition of when hidden directories are used here -Hans
-
- Does not mark dir   inode dirty, do it after successesfull call to it */
-
+/* add entry to the directory (entry can be hidden). Does not mark dir
+   inode dirty, do it after successesfull call to it */
 static int reiserfs_add_entry (struct reiserfs_transaction_handle *th, struct inode * dir,
                                const char * name, int namelen, struct inode * inode,
 			       int visible)
@@ -401,7 +365,7 @@ static int reiserfs_add_entry (struct reiserfs_transaction_handle *th, struct in
     struct reiserfs_de_head * deh;
     INITIALIZE_PATH (path);
     struct reiserfs_dir_entry de;
-    int bit_string [MAX_GENERATION_NUMBER / (sizeof(int) * 8) + 1];
+    char bit_string [MAX_GENERATION_NUMBER / 8 + 1];
     int gen_number;
     char small_buf[32+DEH_SIZE] ; /* 48 bytes now and we avoid kmalloc
                                      if we create file with short name */
@@ -452,43 +416,41 @@ static int reiserfs_add_entry (struct reiserfs_transaction_handle *th, struct in
 
     /* find the proper place for the new entry */
     memset (bit_string, 0, sizeof (bit_string));
-    de.de_gen_number_bit_string = (char *)bit_string;
-    retval = reiserfs_find_entry (dir, name, namelen, &path, &de);
-    if (retval != NAME_NOT_FOUND) {
+    de.de_gen_number_bit_string = bit_string;
+    if (reiserfs_find_entry (dir, name, namelen, &path, &de) == NAME_FOUND) {
 	if (buffer != small_buf)
 	    reiserfs_kfree (buffer, buflen, dir->i_sb);
 	pathrelse (&path);
-	
-	if (retval != NAME_FOUND) {
-	    reiserfs_warning ("zam-7002:" __FUNCTION__ ": \"reiserfs_find_entry\" has returned"
-			      " unexpected value (%d)\n", retval);
-	}
-	
 	return -EEXIST;
     }
 
-    gen_number = find_first_zero_bit (bit_string, MAX_GENERATION_NUMBER + 1);
-    if (gen_number > MAX_GENERATION_NUMBER) {
-	/* there is no free generation number */
-	reiserfs_warning ("reiserfs_add_entry: Congratulations! we have got hash function screwed up\n");
-	if (buffer != small_buf)
-	    reiserfs_kfree (buffer, buflen, dir->i_sb);
-	pathrelse (&path);
-	return -EBUSY;
-    }
-    /* adjust offset of directory enrty */
-    deh->deh_offset = cpu_to_le32 (SET_GENERATION_NUMBER (deh_offset (deh), gen_number));
-    set_cpu_key_k_offset (&entry_key, le32_to_cpu (deh->deh_offset));
+    if (find_first_nonzero_bit (bit_string, MAX_GENERATION_NUMBER + 1) < MAX_GENERATION_NUMBER + 1) {
+	/* there are few names with given hash value */
+	gen_number = find_first_zero_bit (bit_string, MAX_GENERATION_NUMBER + 1);
+	if (gen_number > MAX_GENERATION_NUMBER) {
+	    /* there is no free generation number */
+	    reiserfs_warning ("reiserfs_add_entry: Congratulations! we have got hash function screwed up\n");
+	    if (buffer != small_buf)
+		reiserfs_kfree (buffer, buflen, dir->i_sb);
+	    pathrelse (&path);
+	    return -EBUSY; //HASHCOLLISION;//EBADSLT
+	}
+	/* adjust offset of directory enrty */
+	deh->deh_offset = cpu_to_le32 (SET_GENERATION_NUMBER (deh_offset (deh), gen_number));
+	set_cpu_key_k_offset (&entry_key, le32_to_cpu (deh->deh_offset));
 
-    if (gen_number != 0) {	/* we need to re-search for the insertion point */
-	if (search_by_entry_key (dir->i_sb, &entry_key, &path, &de) != NAME_NOT_FOUND) {
+	/* find place for new entry */
+	if (search_by_entry_key (dir->i_sb, &entry_key, &path, &de) == NAME_FOUND) {
 	    reiserfs_warning ("vs-7032: reiserfs_add_entry: "
-			      "entry with this key (%k) already exists\n", &entry_key);
+			      "entry with this key (%k) already exists", &entry_key);
 	    if (buffer != small_buf)
 		reiserfs_kfree (buffer, buflen, dir->i_sb);
 	    pathrelse (&path);
 	    return -EBUSY;
 	}
+    } else {
+	deh->deh_offset = cpu_to_le32 (SET_GENERATION_NUMBER (le32_to_cpu (deh->deh_offset), 0));
+	set_cpu_key_k_offset (&entry_key, le32_to_cpu (deh->deh_offset));
     }
   
     /* perform the insertion of the entry that we have prepared */
@@ -640,10 +602,17 @@ int reiserfs_mkdir (struct inode * dir, struct dentry *dentry, int mode)
     journal_begin(&th, dir->i_sb, jbegin_count) ;
     windex = push_journal_writer("reiserfs_mkdir") ;
 
+    if (dir->i_nlink >= REISERFS_LINK_MAX) {
+	//FIXME: sd_nlink is 32 bit now
+	pop_journal_writer(windex) ;
+	journal_end(&th, dir->i_sb, jbegin_count) ;
+	iput(inode) ;
+	return -EMLINK;
+    }
     /* inc the link count now, so another writer doesn't overflow it while
     ** we sleep later on.
     */
-    INC_DIR_INODE_NLINK(dir)
+    dir->i_nlink ++; 
 
     mode = S_IFDIR | mode;
     inode = reiserfs_new_inode (&th, dir, mode, 0/*symlink*/,
@@ -664,7 +633,7 @@ int reiserfs_mkdir (struct inode * dir, struct dentry *dentry, int mode)
 				inode, 1/*visible*/);
     if (retval) {
 	inode->i_nlink = 0;
-	DEC_DIR_INODE_NLINK(dir);
+	dir->i_nlink-- ;
 	reiserfs_update_sd (&th, inode);
 	pop_journal_writer(windex) ;
 	journal_end(&th, dir->i_sb, jbegin_count) ;
@@ -735,20 +704,18 @@ int reiserfs_rmdir (struct inode * dir, struct dentry *dentry)
     }
 
     /* cut entry from dir directory */
-    retval = reiserfs_cut_from_item (&th, &path, &(de.de_entry_key), dir, 
-                                     NULL, /* page */ 
-				     0/*new file size - not used here*/);
+    retval = reiserfs_cut_from_item (&th, &path, &(de.de_entry_key), dir, 0/*new file size - not used here*/);
     if (retval < 0)
 	goto end_rmdir;
 
-    if ( inode->i_nlink != 2 && inode->i_nlink != 1 )
+    if (inode->i_nlink != 2)
 	printk ("reiserfs_rmdir: empty directory has nlink != 2 (%d)\n", inode->i_nlink);
 
     inode->i_nlink = 0;
     inode->i_ctime = dir->i_ctime = dir->i_mtime = CURRENT_TIME;
     reiserfs_update_sd (&th, inode);
 
-    DEC_DIR_INODE_NLINK(dir)
+    dir->i_nlink --;
     dir->i_size -= (DEH_SIZE + de.de_entrylen);
     dir->i_blocks = ((dir->i_size + 511) >> 9);
     reiserfs_update_sd (&th, dir);
@@ -809,7 +776,7 @@ int reiserfs_unlink (struct inode * dir, struct dentry *dentry)
 	inode->i_nlink = 1;
     }
 
-    retval = reiserfs_cut_from_item (&th, &path, &(de.de_entry_key), dir, NULL, 0);
+    retval = reiserfs_cut_from_item (&th, &path, &(de.de_entry_key), dir, 0);
     if (retval < 0)
 	goto end_unlink;
 
@@ -991,7 +958,7 @@ static int entry_points_to_object (const char * name, int len, struct reiserfs_d
 }
 
 
-/* sets key of objectid the entry has to point to */
+/* sets key of objectd the entry has to point to */
 static void set_ino_in_dir_entry (struct reiserfs_dir_entry * de, struct key * key)
 {
     de->de_deh[de->de_entry_num].deh_dir_id = key->k_dir_id;
@@ -1006,7 +973,6 @@ static void set_ino_in_dir_entry (struct reiserfs_dir_entry * de, struct key * k
 // at the ext2 code and comparing. It's subfunctions contain no code
 // used as a template unless they are so labeled.
 //
-
 /* 
  * process, that is going to call fix_nodes/do_balance must hold only
  * one path. If it holds 2 or more, it can get into endless waiting in
@@ -1036,8 +1002,10 @@ int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
     retval = reiserfs_find_entry (old_dir, old_dentry->d_name.name, old_dentry->d_name.len,
 				  &old_entry_path, &old_de);
     pathrelse (&old_entry_path);
-    if (retval != NAME_FOUND || old_de.de_objectid != old_inode->i_ino) {
-	// FIXME: IO error is possible here
+    if (retval != NAME_FOUND && old_de.de_objectid != old_inode->i_ino) {
+	// FIXME: IO error is possible here, but as ext2_rename does
+	// not detect it we do not as well
+	
 	return -ENOENT;
     }
 
@@ -1064,10 +1032,15 @@ int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
 	/* inode number of .. must equal old_dir->i_ino */
 	if (dot_dot_de.de_objectid != old_dir->i_ino)
 	    return -EIO;
+
+	if (!new_inode && new_dir->i_nlink >= REISERFS_LINK_MAX)
+	    return -EMLINK;
     }
+
 
     journal_begin(&th, old_dir->i_sb, jbegin_count) ;
     windex = push_journal_writer("reiserfs_rename") ;
+
 
     /* add new entry (or find the existing one) */
     retval = reiserfs_add_entry (&th, new_dir, new_dentry->d_name.name, new_dentry->d_name.len, 
@@ -1110,15 +1083,7 @@ int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
 	    // node containing ".." gets into transaction
 	    reiserfs_prepare_for_journal(old_inode->i_sb, dot_dot_de.de_bh, 1) ;
 	}
-				/* we should check seals here, not do
-                                   this stuff, yes? Then, having
-                                   gathered everything into RAM we
-                                   should lock the buffers, yes?  -Hans */
-				/* probably.  our rename needs to hold more 
-				** than one path at once.  The seals would 
-				** have to be written to deal with multi-path 
-				** issues -chris
-				*/
+
 	/* sanity checking before doing the rename - avoid races many
 	** of the above checks could have scheduled.  We have to be
 	** sure our items haven't been shifted by another process.
@@ -1164,11 +1129,7 @@ int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
 
     if (new_inode) {
 	// adjust link number of the victim
-	if (S_ISDIR(new_inode->i_mode)) {
-	  DEC_DIR_INODE_NLINK(new_inode)
-	} else {
-	  new_inode->i_nlink--;
-	}
+	new_inode->i_nlink--;
 	new_inode->i_ctime = CURRENT_TIME;
     }
 
@@ -1178,15 +1139,11 @@ int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
 	set_ino_in_dir_entry (&dot_dot_de, INODE_PKEY (new_dir));
 	journal_mark_dirty (&th, new_dir->i_sb, dot_dot_de.de_bh);
 
-	DEC_DIR_INODE_NLINK(old_dir)
+	old_dir->i_nlink--;
 	if (new_inode) {
-	    if (S_ISDIR(new_inode->i_mode)) {
-		DEC_DIR_INODE_NLINK(new_inode)
-	    } else {
-	        new_inode->i_nlink--;
-	    }
+	    new_inode->i_nlink--;
 	} else {
-	    INC_DIR_INODE_NLINK(new_dir)
+	    new_dir->i_nlink++;
 	}
     }
 
@@ -1197,7 +1154,7 @@ int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
     // FIXME: this reiserfs_cut_from_item's return value may screw up
     // anybody, but it will panic if will not be able to find the
     // entry. This needs one more clean up
-    if (reiserfs_cut_from_item (&th, &old_entry_path, &(old_de.de_entry_key), old_dir, NULL, 0) < 0)
+    if (reiserfs_cut_from_item (&th, &old_entry_path, &(old_de.de_entry_key), old_dir, 0) < 0)
 	reiserfs_warning ("vs-: reiserfs_rename: coudl not cut old name. Fsck later?\n");
 
     old_dir->i_size -= DEH_SIZE + old_de.de_entrylen;

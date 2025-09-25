@@ -670,6 +670,7 @@ asmlinkage void __init start_kernel(void)
 	sti();
 	calibrate_delay();
 #ifdef CONFIG_BLK_DEV_INITRD
+	printk("looking at initrd early on!\n");
 	if (initrd_start && !initrd_below_start_ok &&
 			initrd_start < min_low_pfn << PAGE_SHIFT) {
 		printk(KERN_CRIT "initrd overwritten (0x%08lx < 0x%08lx) - "
@@ -871,19 +872,22 @@ static void prepare_namespace(void)
 	rd_load();
 #endif
 
-	/* Mount the root filesystem.. */
+      /* Mount the root filesystem.. */
 	mount_root();
 
 	mount_devfs_fs ();
 
 #ifdef CONFIG_BLK_DEV_INITRD
 	root_mountflags = real_root_mountflags;
+	printk("looking at initrd!\n");
 	if (mount_initrd && ROOT_DEV != real_root_dev
 	    && MAJOR(ROOT_DEV) == RAMDISK_MAJOR && MINOR(ROOT_DEV) == 0) {
 		int error;
 		int i, pid;
 
+		printk("Trying to start linuxrc now!\n");
 		pid = kernel_thread(do_linuxrc, "/linuxrc", SIGCHLD);
+		printk("linuxrc started!\n");
 		if (pid>0)
 			while (pid != wait(&i));
 		if (MAJOR(real_root_dev) != RAMDISK_MAJOR

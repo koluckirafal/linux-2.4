@@ -517,6 +517,68 @@ struct inode {
 	} u;
 };
 
+/* Inode state bits.. */
+#define I_DIRTY_SYNC		1 /* Not dirty enough for O_DATASYNC */
+#define I_DIRTY_DATASYNC	2 /* Data-related inode changes pending */
+#define I_DIRTY_PAGES		4 /* Data-related inode changes pending */
+#define I_LOCK			8
+#define I_FREEING		16
+#define I_CLEAR			32
+
+#define I_DIRTY (I_DIRTY_SYNC | I_DIRTY_DATASYNC | I_DIRTY_PAGES)
+
+extern void __mark_inode_dirty(struct inode *, int);
+static inline void mark_inode_dirty(struct inode *inode)
+{
+	if ((inode->i_state & I_DIRTY) != I_DIRTY)
+		__mark_inode_dirty(inode, I_DIRTY);
+}
+
+static inline void mark_inode_dirty_sync(struct inode *inode)
+{
+	if (!(inode->i_state & I_DIRTY_SYNC))
+		__mark_inode_dirty(inode, I_DIRTY_SYNC);
+}
+
+static inline void inode_add_bytes(struct inode *inode, loff_t bytes)
+{
+	inode->i_blocks += bytes >> 9;
+	bytes &= 511;
+	inode->i_bytes += bytes;
+	if (inode->i_bytes >= 512) {
+		inode->i_blocks++;
+		inode->i_bytes -= 512;
+	}
+}
+
+static inline void inode_sub_bytes(struct inode *inode, loff_t bytes)
+{
+	inode->i_blocks -= bytes >> 9;
+	bytes &= 511;
+	if (inode->i_bytes < bytes) {
+		inode->i_blocks--;
+		inode->i_bytes += 512;
+	}
+	inode->i_bytes -= bytes;
+}
+
+static inline loff_t inode_get_bytes(struct inode *inode)
+{
+	return (((loff_t)inode->i_blocks) << 9) + inode->i_bytes;
+}
+
+static inline void inode_set_bytes(struct inode *inode, loff_t bytes)
+{
+	inode->i_blocks = bytes >> 9;
+	inode->i_bytes = bytes & 511;
+}
+
+static inline void mark_inode_dirty_pages(struct inode *inode)
+{
+	if (inode && !(inode->i_state & I_DIRTY_PAGES))
+		__mark_inode_dirty(inode, I_DIRTY_PAGES);
+}
+
 struct fown_struct {
 	int pid;		/* pid or -pgrp where SIGIO should be sent */
 	uid_t uid, euid;	/* uid/euid of process setting the owner */
@@ -874,8 +936,6 @@ struct super_operations {
 	void (*delete_inode) (struct inode *);
 	void (*put_super) (struct super_block *);
 	void (*write_super) (struct super_block *);
-	void (*write_super_lockfs) (struct super_block *);
-	void (*unlockfs) (struct super_block *);
 	int (*statfs) (struct super_block *, struct statfs *);
 	int (*remount_fs) (struct super_block *, int *, char *);
 	void (*clear_inode) (struct inode *);
@@ -906,65 +966,6 @@ struct super_operations {
 	struct dentry * (*fh_to_dentry)(struct super_block *sb, __u32 *fh, int len, int fhtype, int parent);
 	int (*dentry_to_fh)(struct dentry *, __u32 *fh, int *lenp, int need_parent);
 };
-
-/* Inode state bits.. */
-#define I_DIRTY_SYNC		1 /* Not dirty enough for O_DATASYNC */
-#define I_DIRTY_DATASYNC	2 /* Data-related inode changes pending */
-#define I_DIRTY_PAGES		4 /* Data-related inode changes pending */
-#define I_LOCK			8
-#define I_FREEING		16
-#define I_CLEAR			32
-
-#define I_DIRTY (I_DIRTY_SYNC | I_DIRTY_DATASYNC | I_DIRTY_PAGES)
-
-extern void __mark_inode_dirty(struct inode *, int);
-static inline void mark_inode_dirty(struct inode *inode)
-{
-	__mark_inode_dirty(inode, I_DIRTY);
-}
-
-static inline void mark_inode_dirty_sync(struct inode *inode)
-{
-	__mark_inode_dirty(inode, I_DIRTY_SYNC);
-}
-
-static inline void inode_add_bytes(struct inode *inode, loff_t bytes)
-{
-	inode->i_blocks += bytes >> 9;
-	bytes &= 511;
-	inode->i_bytes += bytes;
-	if (inode->i_bytes >= 512) {
-		inode->i_blocks++;
-		inode->i_bytes -= 512;
-	}
-}
-
-static inline void inode_sub_bytes(struct inode *inode, loff_t bytes)
-{
-	inode->i_blocks -= bytes >> 9;
-	bytes &= 511;
-	if (inode->i_bytes < bytes) {
-		inode->i_blocks--;
-		inode->i_bytes += 512;
-	}
-	inode->i_bytes -= bytes;
-}
-
-static inline loff_t inode_get_bytes(struct inode *inode)
-{
-	return (((loff_t)inode->i_blocks) << 9) + inode->i_bytes;
-}
-
-static inline void inode_set_bytes(struct inode *inode, loff_t bytes)
-{
-	inode->i_blocks = bytes >> 9;
-	inode->i_bytes = bytes & 511;
-}
-
-static inline void mark_inode_dirty_pages(struct inode *inode)
-{
-	__mark_inode_dirty(inode, I_DIRTY_PAGES);
-}
 
 struct dquot_operations {
 	void (*initialize) (struct inode *, short);
@@ -1133,9 +1134,6 @@ extern int try_to_free_buffers(struct page *, unsigned int);
 extern void refile_buffer(struct buffer_head * buf);
 extern void create_empty_buffers(struct page *, kdev_t, unsigned long);
 extern void end_buffer_io_sync(struct buffer_head *bh, int uptodate);
-
-/* reiserfs_writepage needs this */
-extern void set_buffer_async_io(struct buffer_head *bh) ;
 
 #define BUF_CLEAN	0
 #define BUF_LOCKED	1	/* Buffers scheduled for write */

@@ -14,6 +14,8 @@
 #ifndef  _IRQ_H
 # define _IRQ_H
 
+#include "amithlon_pci.h"
+
 # ifdef __KERNEL__
 #  include <asm/ioctl.h>
 # else
@@ -24,6 +26,17 @@
    extern "C" {
 # endif
 
+typedef struct {
+  struct task_struct *task;
+  unsigned long      addr;
+  unsigned long      handler;
+} fpf_data;
+
+typedef struct {
+  unsigned long addr;
+  unsigned long count;
+  unsigned short port;
+} ioport_data;
 
 /* + ioctl definitions */
 
@@ -47,6 +60,13 @@ enum
 	__IRQ_STAT_IOCTL_NUMBER,
 
 	__IRQ_SIMULATE_IOCTL_NUMBER,
+	
+	__UAE_SET_TIMER_NUMBER,
+	__UAE_GET_RANGE_NUMBER,
+	__UAE_SET_FPF_NUMBER,
+	__UAE_GET_FPF_EIP_NUMBER,
+	__UAE_READ_IOPORT_NUMBER,
+	__UAE_PCI_OP_NUMBER,
 };
 
 
@@ -78,6 +98,30 @@ enum
 
 #define __IRQ_SIMULATE_IOCTL \
 	_IO (__IRQ_IOCTL_TYPE_LETTER, __IRQ_SIMULATE_IOCTL_NUMBER)
+
+#define __UAE_SET_TIMER_IOCTL \
+	_IOW(__IRQ_IOCTL_TYPE_LETTER, __UAE_SET_TIMER_NUMBER, \
+		unsigned long long )
+
+#define __UAE_GET_RANGE_IOCTL \
+	_IOWR(__IRQ_IOCTL_TYPE_LETTER, __UAE_GET_RANGE_NUMBER, \
+		unsigned long)
+
+#define __UAE_SET_FPF_IOCTL \
+	_IOW(__IRQ_IOCTL_TYPE_LETTER, __UAE_SET_FPF_NUMBER, \
+		fpf_data)
+
+#define __UAE_GET_FPF_EIP_IOCTL \
+	_IOR(__IRQ_IOCTL_TYPE_LETTER, __UAE_SET_FPF_NUMBER, \
+		unsigned long)
+
+#define __UAE_READ_IOPORT_IOCTL \
+	_IOW(__IRQ_IOCTL_TYPE_LETTER, __UAE_READ_IOPORT_NUMBER, \
+		ioport_data)
+
+#define __UAE_PCI_OP_IOCTL \
+	_IOWR(__IRQ_IOCTL_TYPE_LETTER, __UAE_PCI_OP_NUMBER, \
+		pcidata)
 
 /* - ioctl definitions */
 

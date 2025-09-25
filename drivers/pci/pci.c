@@ -9,6 +9,17 @@
  *	Copyright 1997 -- 2000 Martin Mares <mj@suse.cz>
  */
 
+#define UAE_PCI_START 0x50000000
+#define UAE_PCI_END   0xb0000000
+
+#if 1
+#define PCI_OFFSET pci_offset
+#define PCI_OFFSET_BRIDGE ((PCI_OFFSET)>>16) 
+#else
+#define PCI_OFFSET 0
+#define PCI_OFFSET_BRIDGE ((PCI_OFFSET)>>16) 
+#endif
+
 #include <linux/config.h>
 #include <linux/module.h>
 #include <linux/types.h>
@@ -23,6 +34,7 @@
 #include <linux/kmod.h>		/* for hotplug_path */
 #include <linux/bitops.h>
 #include <linux/delay.h>
+#include <linux/tty.h>
 
 #include <asm/page.h>
 #include <asm/dma.h>	/* isa_dma_bridge_buggy */
@@ -953,6 +965,7 @@ void __init pci_read_bridge_bases(struct pci_bus *child)
 	if (!dev)		/* It's a host bus, nothing to read */
 		return;
 
+	dev->bridge_valid_bases=0;
 	for(i=0; i<3; i++)
 		child->resource[i] = &dev->resource[PCI_BRIDGE_RESOURCES+i];
 
@@ -975,6 +988,7 @@ void __init pci_read_bridge_bases(struct pci_bus *child)
 		res->start = base;
 		res->end = limit + 0xfff;
 		res->name = child->name;
+		dev->bridge_valid_bases|=1;
 	} else {
 		/*
 		 * Ugh. We don't know enough about this bridge. Just assume
@@ -994,6 +1008,7 @@ void __init pci_read_bridge_bases(struct pci_bus *child)
 		res->start = base;
 		res->end = limit + 0xfffff;
 		res->name = child->name;
+		dev->bridge_valid_bases|=2;
 	} else {
 		/* See comment above. Same thing */
 		printk(KERN_ERR "Unknown bridge resource %d: assuming transparent\n", 1);
@@ -1025,6 +1040,7 @@ void __init pci_read_bridge_bases(struct pci_bus *child)
 		res->start = base;
 		res->end = limit + 0xfffff;
 		res->name = child->name;
+		dev->bridge_valid_bases|=4;
 	} else {
 		/* See comments above */
 		printk(KERN_ERR "Unknown bridge resource %d: assuming transparent\n", 2);
@@ -1904,16 +1920,199 @@ pci_pool_free (struct pci_pool *pool, void *vaddr, dma_addr_t dma)
 	spin_unlock_irqrestore (&pool->lock, flags);
 }
 
+void __init pci_fixup_uae(void)
+{
+	struct pci_dev *dev;
+	u32 minstart;
+	u32 maxend;
+	u32 maxsize;
+	u32 pci_offset;
+	u32 ok;
+
+	minstart=~0;
+	maxend=0;
+	maxsize=1024*1024;
+
+	pci_for_each_dev(dev) {
+	  int i;
+	  int rescount=7;
+	  
+	  printk(KERN_ERR "%04x %04x   hdrtype %d\n",dev->vendor,dev->device,
+		 dev->hdr_type);
+	  if (dev->hdr_type==1) {
+	    u16 tmp;
+
+	    printk(KERN_ERR "  subordinate bus: %p, valid_bases=%02x\n",dev->subordinate,dev->bridge_valid_bases);
+	    pci_read_config_word(dev, PCI_MEMORY_BASE, &tmp);
+	    printk(KERN_ERR "  mem_base=%04x\n",tmp);
+	    pci_read_config_word(dev, PCI_MEMORY_LIMIT, &tmp);
+	    printk(KERN_ERR "  mem_limit=%04x\n",tmp);
+	    pci_read_config_word(dev, PCI_PREF_MEMORY_BASE, &tmp);
+	    printk(KERN_ERR "  pref_base=%04x\n",tmp);
+	    pci_read_config_word(dev, PCI_PREF_MEMORY_LIMIT, &tmp);
+	    printk(KERN_ERR "  pref_limit=%04x\n",tmp);
+	  }
+	  for (i=0;i<rescount;i++) {
+	    if (dev->resource[i].start) {
+	      printk(KERN_ERR "resource %d: Start %08lx, end %08lx, flags %08x\n",
+		     i,dev->resource[i].start,
+		     dev->resource[i].end,
+		     dev->resource[i].flags);
+	      if (dev->resource[i].flags & IORESOURCE_MEM) {
+		if (dev->resource[i].start<minstart)
+		  minstart=dev->resource[i].start;
+		if (dev->resource[i].end>maxend)
+		  maxend=dev->resource[i].end;
+		if (dev->resource[i].end-dev->resource[i].start+1 > maxsize) 
+		  maxsize=dev->resource[i].end-dev->resource[i].start+1;
+	      }
+	    }
+	  }
+	}
+	printk(KERN_ERR "minstart=%08x, maxend=%08x, maxsize=%08x\n",
+	       minstart,maxend,maxsize);
+	pci_offset=0;
+	do {
+	  ok=1;
+	  pci_for_each_dev(dev) {
+	    int i;
+	    int rescount=7;
+	    
+	    for (i=0;i<rescount;i++) {
+	      if (dev->resource[i].start) {
+		if (dev->resource[i].flags & IORESOURCE_MEM) {
+		  if (dev->resource[i].start+pci_offset<UAE_PCI_START ||
+		      dev->resource[i].start+pci_offset>=UAE_PCI_END)
+		    ok=0;
+		  if (dev->resource[i].end+pci_offset<UAE_PCI_START ||
+		      dev->resource[i].end+pci_offset>=UAE_PCI_END)
+		    ok=0;
+		  if (((u32)(dev->resource[i].start+pci_offset))>
+		      ((u32)(dev->resource[i].end+pci_offset)))
+		    ok=0;
+		}
+	      }
+	    }
+	  }
+	  if (!ok) {
+	    pci_offset+=maxsize;
+	    if (!pci_offset) {
+	      printk(KERN_ERR "ARGH! Could not find proper pci_offset\n");
+	      return;
+	    }
+	  }
+	} while (!ok);
+
+	printk(KERN_ERR "pci_offset %08x, new start=%08x, new end=%08x\n",
+	       pci_offset,minstart+pci_offset,maxend+pci_offset);
+	
+	printk(KERN_ERR "==================== Moving PCI NOW! =============\n");
+	pci_for_each_dev(dev) {
+	  int i;
+	  
+	  if (dev->hdr_type==0) {
+	    for (i=0;i<6;i++) {
+	      if (dev->resource[i].start &&
+		  !(dev->resource[i].flags&PCI_BASE_ADDRESS_SPACE_IO)) {
+		u32 old,base;
+		dev->resource[i].start+=PCI_OFFSET;
+		dev->resource[i].end+=PCI_OFFSET;
+		pci_read_config_dword(dev,0x10+4*i,&old);
+		old&=~PCI_BASE_ADDRESS_MEM_MASK;
+		base=dev->resource[i].start&PCI_BASE_ADDRESS_MEM_MASK;
+		pci_write_config_dword(dev, 0x10+4*i, old|base);
+	      }
+	    }
+	    if (dev->resource[PCI_ROM_RESOURCE].start) {
+	      u32 old,base;
+	      dev->resource[PCI_ROM_RESOURCE].start+=PCI_OFFSET;
+	      dev->resource[PCI_ROM_RESOURCE].end+=PCI_OFFSET;
+	      pci_read_config_dword(dev,PCI_ROM_ADDRESS,&old);
+	      old&=~PCI_ROM_ADDRESS_MASK;
+	      base=dev->resource[PCI_ROM_RESOURCE].start&PCI_ROM_ADDRESS_MASK;
+	      pci_write_config_dword(dev, PCI_ROM_ADDRESS, old|base);
+	    }
+	  }
+	  else if (dev->hdr_type==1) {
+	    struct pci_bus* bus=dev->subordinate;
+
+	    for (i=0;i<2;i++) {
+	      if (dev->resource[i].start &&
+		  !(dev->resource[i].flags&PCI_BASE_ADDRESS_SPACE_IO)) {
+		u32 old,base;
+		dev->resource[i].start+=PCI_OFFSET;
+		dev->resource[i].end+=PCI_OFFSET;
+		pci_read_config_dword(dev,0x10+4*i,&old);
+		old&=~PCI_BASE_ADDRESS_MEM_MASK;
+		base=dev->resource[i].start&PCI_BASE_ADDRESS_MEM_MASK;
+		pci_write_config_dword(dev, 0x10+4*i, old|base);
+	      }
+	    }
+	    if (dev->resource[PCI_ROM_RESOURCE].start) {
+	      u32 old,base;
+	      dev->resource[PCI_ROM_RESOURCE].start+=PCI_OFFSET;
+	      dev->resource[PCI_ROM_RESOURCE].end+=PCI_OFFSET;
+	      pci_read_config_dword(dev,PCI_ROM_ADDRESS1,&old);
+	      old&=~PCI_ROM_ADDRESS_MASK;
+	      base=dev->resource[PCI_ROM_RESOURCE].start&PCI_ROM_ADDRESS_MASK;
+	      pci_write_config_dword(dev, PCI_ROM_ADDRESS1, old|base);
+	    }
+	    
+	    if (bus) {
+	      if (bus->resource[1] && (dev->bridge_valid_bases&2)) {
+		u16 mem_base_lo, mem_limit_lo;
+		printk(KERN_ERR " bus resource 1: Start/end %08x/%08x\n",
+		       bus->resource[1]->start,
+		       bus->resource[1]->end);
+		pci_read_config_word(dev, PCI_MEMORY_BASE, &mem_base_lo);
+		pci_read_config_word(dev, PCI_MEMORY_LIMIT, &mem_limit_lo);
+		bus->resource[1]->start+=PCI_OFFSET;
+		bus->resource[1]->end+=PCI_OFFSET;
+		pci_write_config_word(dev,PCI_MEMORY_LIMIT,
+				      mem_limit_lo+PCI_OFFSET_BRIDGE);
+		pci_write_config_word(dev,PCI_MEMORY_BASE,
+				      mem_base_lo+PCI_OFFSET_BRIDGE);
+	      }
+	      if (bus->resource[2] && (dev->bridge_valid_bases&4)) {
+		u16 mem_base_lo, mem_limit_lo;
+		printk(KERN_ERR " bus resource 2: Start/end %08x/%08x\n",
+		       bus->resource[2]->start,
+		       bus->resource[2]->end);
+		pci_read_config_word(dev, PCI_PREF_MEMORY_BASE, &mem_base_lo);
+		pci_read_config_word(dev, PCI_PREF_MEMORY_LIMIT, &mem_limit_lo);
+		bus->resource[2]->start+=PCI_OFFSET;
+		bus->resource[2]->end+=PCI_OFFSET;
+		pci_write_config_word(dev,PCI_PREF_MEMORY_LIMIT,
+				      mem_limit_lo+PCI_OFFSET_BRIDGE);
+		pci_write_config_word(dev,PCI_PREF_MEMORY_BASE,
+				      mem_base_lo+PCI_OFFSET_BRIDGE);
+	      }
+	    }
+	  }
+	}
+	screen_info.lfb_base=
+	  (u32)(screen_info.lfb_base+PCI_OFFSET);  /* For the vesa framebuffer.
+						      It's the one thing that
+						      already has cached a PCI
+						      address */
+}
+
 
 void __init pci_init(void)
 {
 	struct pci_dev *dev;
+	u32 minstart;
+	u32 maxend;
+	u32 maxsize;
+	u32 pci_offset;
 
 	pcibios_init();
 
 	pci_for_each_dev(dev) {
 		pci_fixup_device(PCI_FIXUP_FINAL, dev);
 	}
+	
+	pci_fixup_uae();
 
 #ifdef CONFIG_PM
 	pm_register(PM_PCI_DEV, 0, pci_pm_callback);

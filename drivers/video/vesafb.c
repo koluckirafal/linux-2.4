@@ -519,14 +519,17 @@ int __init vesafb_init(void)
 	video_visual = (video_bpp == 8) ?
 		FB_VISUAL_PSEUDOCOLOR : FB_VISUAL_TRUECOLOR;
 
+#if 1 /* FIXXXXXXMMMMEEEEE!!!!! */
 	if (!request_mem_region(video_base, video_size, "vesafb")) {
 		printk(KERN_WARNING
 		       "vesafb: abort, cannot reserve video memory at 0x%lx\n",
 			video_base);
 		/* We cannot make this fatal. Sometimes this comes from magic
 		   spaces our resource handlers simply don't know about */
+		/* Like hell we can't! */
+		return -EIO;
 	}
-
+#endif
         video_vbase = ioremap(video_base, video_size);
 	if (!video_vbase) {
 		release_mem_region(video_base, video_size);

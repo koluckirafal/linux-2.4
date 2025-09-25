@@ -1,5 +1,5 @@
 /*
- *  Copyright 2000 by Hans Reiser, licensing governed by reiserfs/README  
+ *  Copyright 1996, 1997, 1998 Hans Reiser, see reiserfs/README for licensing and copyright details
  */
 
 
@@ -10,17 +10,27 @@
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
  */
+#ifdef __KERNEL__
 
-#include <linux/config.h>
 #include <linux/sched.h>
 #include <linux/locks.h>
 #include <linux/reiserfs_fs.h>
 #include <linux/smp_lock.h>
 
+#else
+
+#include "nokernel.h"
+
+#endif
+
+
 /*
  *  wait_buffer_until_released
  *  reiserfs_bread
  *  reiserfs_getblk
+ *  reiserfs_journal_end_io
+ *  reiserfs_end_io_task
+ *  reiserfs_end_buffer_io_sync
  *  get_new_buffer
  */
 
@@ -50,9 +60,104 @@ void wait_buffer_until_released (struct buffer_head * bh)
     schedule();
   }
   if (repeat_counter > 30000000) {
-    reiserfs_warning("vs-3051: done waiting, ignore vs-3050 messages for (%b)\n", bh) ;
+    reiserfs_warning("vs-3051: done waiting on buffer (%b)\n", bh) ;
   }
 }
+
+
+/* no longer need, should just make journal.c use the default handler */
+void reiserfs_journal_end_io (struct buffer_head *bh, int uptodate)
+{
+  mark_buffer_uptodate(bh, uptodate);
+  unlock_buffer(bh);
+  return ;
+}
+
+
+/* struct used to service end_io events.  kmalloc'd in 
+** reiserfs_end_buffer_io_sync 
+*/
+struct reiserfs_end_io {
+  struct buffer_head *bh ; /* buffer head to check */
+  struct tq_struct task ;  /* task struct to use */
+  struct reiserfs_end_io *self ; /* pointer to this struct for kfree to use */
+} ;
+
+/*
+** does the hash list updating required to release a buffer head.
+** must not be called at interrupt time (so I can use the non irq masking 
+** spinlocks).  Right now, put onto the schedule task queue, one for
+** each block that gets written
+*/
+static void reiserfs_end_io_task(struct reiserfs_end_io *io) {
+  struct buffer_head *bh = io->bh ;
+  int windex = push_journal_writer("end_io_task") ;
+
+  if (buffer_journal_dirty(bh)) {
+    struct reiserfs_journal_cnode *cur ;
+    struct super_block * s = get_super (bh->b_dev);
+
+    if (!s) 
+      goto done ;
+
+    if (!buffer_journal_dirty(bh)) { 
+      goto done ;
+    }
+    mark_buffer_notjournal_dirty(bh) ;
+    cur = (journal_hash(SB_JOURNAL(s)->j_list_hash_table, bh->b_dev, bh->b_blocknr)) ;
+    while(cur) {
+      if (cur->bh && cur->blocknr == bh->b_blocknr && cur->dev == bh->b_dev) {
+	if (cur->jlist) { /* since we are clearing the bh, we must decrement nonzerolen */
+	  atomic_dec(&(cur->jlist->j_nonzerolen)) ;
+	}
+	cur->bh = NULL ;
+      }
+      cur = cur->hnext ;
+    }
+    atomic_dec(&(bh->b_count)) ;
+  }
+done:
+  kfree(io->self) ;
+  pop_journal_writer(windex) ;
+  brelse(bh) ;
+  return ;
+}
+
+/*
+** general end_io routine for all reiserfs blocks.
+** logged blocks will come in here marked buffer_journal_dirty()
+** a reiserfs_end_io struct is kmalloc'd for them, and a task is put 
+** on the scheduler queue.  It then does all the required hash table
+** operations to reflect the buffer as writen
+*/
+void reiserfs_end_buffer_io_sync (struct buffer_head *bh, int uptodate)
+{
+
+  mark_buffer_notjournal_new(bh) ;
+  if (buffer_journal_dirty(bh)) {
+    struct reiserfs_end_io *io = kmalloc(sizeof(struct reiserfs_end_io), 
+                                         GFP_ATOMIC) ;
+    /* note, if kmalloc fails, this buffer will be taken care of
+    ** by a check at the end of do_journal_end() in journal.c
+    */
+    if (io) {
+      io->task.next = NULL ;
+      io->task.sync = 0 ;
+      io->task.routine = (void *)(void *)reiserfs_end_io_task ;
+      io->task.data = io ;
+      io->self = io ;
+      io->bh = bh ;
+      atomic_inc(&(bh->b_count)) ;
+      queue_task(&(io->task), &reiserfs_end_io_tq) ;
+    } else {
+      printk("reiserfs/buffer.c-184: kmalloc returned NULL block %lu\n", 
+              bh->b_blocknr) ;
+    }
+  }
+  mark_buffer_uptodate(bh, uptodate);
+  unlock_buffer(bh);
+}
+
 
 /*
  * reiserfs_bread() reads a specified block and returns the buffer that contains
@@ -65,8 +170,15 @@ void wait_buffer_until_released (struct buffer_head * bh)
 
 struct buffer_head  * reiserfs_bread (kdev_t n_dev, int n_block, int n_size) 
 {
-    return bread (n_dev, n_block, n_size);
+    struct buffer_head * bh;
+
+    bh = bread (n_dev, n_block, n_size);
+    if (bh) {
+        bh->b_end_io = reiserfs_end_buffer_io_sync;
+    }
+    return bh;
 }
+
 
 /* This function looks for a buffer which contains a given block.  If
    the block is in cache it returns it, otherwise it returns a new
@@ -78,8 +190,17 @@ struct buffer_head  * reiserfs_bread (kdev_t n_dev, int n_block, int n_size)
 
 struct buffer_head  * reiserfs_getblk (kdev_t n_dev, int n_block, int n_size)
 {
-    return getblk (n_dev, n_block, n_size);
+    struct buffer_head * bh;
+
+    bh = getblk (n_dev, n_block, n_size);
+    if (bh) {
+      bh->b_end_io = reiserfs_end_buffer_io_sync ;
+    }
+    return bh;
 }
+
+
+
 
 #ifdef NEW_GET_NEW_BUFFER
 

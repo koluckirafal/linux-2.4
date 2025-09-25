@@ -95,8 +95,8 @@
 #define CURSOR_HIDE_DELAY		(20)
 #define CURSOR_SHOW_DELAY		(3)
 
-#define CURSOR_COLOR		0x7fff
-#define TRANSPARENT_COLOR	0x0000
+#define CURSOR_COLOR		0x4c00
+#define TRANSPARENT_COLOR	0x8000
 #define MAX_CURS		32
 
 
@@ -503,11 +503,17 @@ static void rivafb_exit_cursor(struct rivafb_info *rinfo)
  * CALLED FROM:
  * riva_load_video_mode()
  */
-static void rivafb_download_cursor(struct rivafb_info *rinfo)
+static void rivafb_download_cursor(struct rivafb_info *rinfo, int level)
 {
 	int i, save;
 	int *image;
+	static int maxlevel=0;
 	
+	if (level<maxlevel)
+	  return;
+	if (level>maxlevel)
+	  maxlevel=level;
+
 	if (!rinfo->cursor) return;
 
 	image = (int *)rinfo->cursor->image;
@@ -628,6 +634,80 @@ static void rivafb_cursor(struct display *p, int mode, int x, int y)
 		c->enable = 1;
 		break;
 	}
+}
+
+
+static void rivafb_amithlon_poscursor(struct rivafb_info *rinfo,
+				      unsigned int x,
+				      unsigned int y,
+				      unsigned int on)
+{
+	struct riva_cursor *c = rinfo->cursor;
+
+	if (!c)	return;
+
+	if (!on)
+	  x=y=0xffffffff;
+
+	if (c->pos.x == x && c->pos.y == y)
+		return;
+	c->enable = 0;
+	c->pos.x = x;
+	c->pos.y = y;
+	*(rinfo->riva.CURSORPOS) = (x & 0xFFFF) | (y << 16);
+	rinfo->riva.ShowHideCursor(&rinfo->riva, on);
+}
+
+static void rivafb_amithlon_setcursor(struct rivafb_info *rinfo, 
+				      unsigned int* data,
+				      unsigned char* red,
+				      unsigned char* green,
+				      unsigned char* blue)
+{
+	struct riva_cursor *c = rinfo->cursor;
+	int i, j, idx;
+	int width,height;
+
+	width=height=32;
+	if (c) {
+		if (width > MAX_CURS) width = MAX_CURS;
+		if (height > MAX_CURS) height = MAX_CURS;
+
+		c->size.x = width;
+		c->size.y = height;
+		
+		idx = 0;
+
+		for (i = 0; i < height; i++) {
+		  int p1,p2;
+		  p1=data[2*i];
+		  p2=data[2*i+1];
+		  
+		  for (j = 0; j < width; j++,idx++) {
+		    int b1,b2,v;
+		    unsigned int colour;
+
+		    b1=!!(p1&(1<<(31-j)));
+		    b2=!!(p2&(1<<(31-j)));
+		    v=b1+2*b2;
+
+		    colour=(((((unsigned int)red[v])>>3)&0x1f)<<10) |
+		      (((((unsigned int)green[v])>>3)&0x1f)<<5) |
+		      (((((unsigned int)blue[v])>>3)&0x1f)<<0) | 
+		      0x8000;
+		    if (!v)
+		      colour=0;
+
+		    c->image[idx] = colour;
+		  }
+		  for (j = width; j < MAX_CURS; j++,idx++)
+		    c->image[idx] = TRANSPARENT_COLOR;
+		}
+		for (i = height; i < MAX_CURS; i++)
+		  for (j = 0; j < MAX_CURS; j++,idx++)
+		    c->image[idx] = TRANSPARENT_COLOR;
+	}
+	rivafb_download_cursor(rinfo,1);
 }
 
 
@@ -909,7 +989,7 @@ static void riva_load_video_mode(struct rivafb_info *rinfo,
 	riva_load_state(rinfo, &rinfo->current_state);
 
 	rinfo->riva.LockUnlock(&rinfo->riva, 0); /* important for HW cursor */
-	rivafb_download_cursor(rinfo);
+	rivafb_download_cursor(rinfo,0);
 }
 
 /**
@@ -1457,12 +1537,14 @@ static int rivafb_set_var(struct fb_var_screeninfo *var, int con,
 	if (v.yoffset < 0)
 		v.yoffset = 0;
 
+#if 0
 	/* truncate xoffset and yoffset to maximum if too high */
 	if (v.xoffset > v.xres_virtual - v.xres)
 		v.xoffset = v.xres_virtual - v.xres - 1;
 
 	if (v.yoffset > v.yres_virtual - v.yres)
 		v.yoffset = v.yres_virtual - v.yres - 1;
+#endif
 
 	v.red.msb_right =
 	    v.green.msb_right =
@@ -1592,11 +1674,12 @@ static int rivafb_pan_display(struct fb_var_screeninfo *var, int con,
 
 	assert(rivainfo != NULL);
 
+#if 0
 	if (var->xoffset > (var->xres_virtual - var->xres))
 		return -EINVAL;
 	if (var->yoffset > (var->yres_virtual - var->yres))
 		return -EINVAL;
-
+#endif
 	dsp = (con < 0) ? rivainfo->info.disp : &fb_display[con];
 
 	if (var->vmode & FB_VMODE_YWRAP) {
@@ -1604,9 +1687,11 @@ static int rivafb_pan_display(struct fb_var_screeninfo *var, int con,
 		    || var->yoffset >= dsp->var.yres_virtual
 		    || var->xoffset) return -EINVAL;
 	} else {
+#if 0
 		if (var->xoffset + dsp->var.xres > dsp->var.xres_virtual ||
 		    var->yoffset + dsp->var.yres > dsp->var.yres_virtual)
 			return -EINVAL;
+#endif
 	}
 
 	base = var->yoffset * dsp->line_length + var->xoffset;
@@ -1628,20 +1713,117 @@ static int rivafb_pan_display(struct fb_var_screeninfo *var, int con,
 	return 0;
 }
 
+#include "../amithlon.h"
+#include <asm/uaccess.h>
+
+void riva_rectfill(struct rivafb_info *rinfo, int sy,
+		   int sx, int height, int width, u_int color);
+void riva_rectcopy(struct rivafb_info *rinfo, int sy, int sx, int dy, int dx,
+		   int height, int width);
+int riva_blittemplate(struct rivafb_info *rinfo,
+		      u_int colour0, u_int colour1,
+		      int sy, int sx, 
+		      int height, int width, 
+		      int offset, char* data, int pitch,
+		      unsigned char rop3);
+
+static inline void wait_for_idle(struct rivafb_info *rinfo)
+{
+    while (rinfo->riva.Busy(&rinfo->riva));
+}
+
 static int rivafb_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 			unsigned long arg, int con, struct fb_info *info)
 {
 	struct rivafb_info *rivainfo = (struct rivafb_info *)info;
 
 	DPRINTK("ENTER\n");
-
 	assert(rivainfo != NULL);
+	
+	switch(cmd) {
+	 case AMITHLON_FILL_RECT: { /* Fill rectangle */
+	     amithlon_fill af;
 
-	/* no rivafb-specific ioctls */
+	     if (copy_from_user(&af, (void *) arg, sizeof(af)))
+		 return -EFAULT;
+	     riva_rectfill(rivainfo,
+			   af.sy,
+			   af.sx,
+			   af.height,
+			   af.width,
+			   af.colour);
+	     wait_for_idle(rivainfo);
+	     return 0;
+	 }
 
-	DPRINTK("EXIT, returning -EINVAL\n");
+	 case AMITHLON_COPY_RECT: { /* Copy rectangle */
+	     amithlon_copy ac;
 
-	return -EINVAL;
+	     if (copy_from_user(&ac, (void *) arg, sizeof(ac)))
+		 return -EFAULT;
+	     riva_rectcopy(rivainfo,
+			   ac.sy,
+			   ac.sx,
+			   ac.dy,
+			   ac.dx,
+			   ac.height,
+			   ac.width);
+	     wait_for_idle(rivainfo);
+	     return 0;
+	 }
+
+	 case AMITHLON_BLIT_TEMP: { /* Blit Template */
+	     amithlon_blittemplate ab;
+	     int answer=0;
+
+	     if (copy_from_user(&ab, (void *) arg, sizeof(ab)))
+		 return -EFAULT;
+	     answer=riva_blittemplate(rivainfo,
+				      ab.colour0,
+				      ab.colour1,
+				      ab.sy,
+				      ab.sx,
+				      ab.height,
+				      ab.width,
+				      ab.offset,
+				      ab.data,
+				      ab.pitch,
+				      ab.rop3);
+	     wait_for_idle(rivainfo);
+	     return answer;
+	 }
+	case AMITHLON_SET_CURSOR:
+	  {
+	    unsigned int data[64];
+	    unsigned char red[4];
+	    unsigned char green[4];
+	    unsigned char blue[4];
+	    amithlon_setcursor asc;
+
+	    if (copy_from_user(&asc, (void *) arg, sizeof(asc)))
+	      return -EFAULT;
+	    if (copy_from_user(data, asc.data, 64*sizeof(unsigned int)))
+	      return -EFAULT;
+	    if (copy_from_user(red, asc.red, 4*sizeof(unsigned char)))
+	      return -EFAULT;
+	    if (copy_from_user(green, asc.green, 4*sizeof(unsigned char)))
+	      return -EFAULT;
+	    if (copy_from_user(blue, asc.blue, 4*sizeof(unsigned char)))
+	      return -EFAULT;
+	    rivafb_amithlon_setcursor(rivainfo,data,red,green,blue);
+	    return 0;
+	  }
+	case AMITHLON_POS_CURSOR:
+	  {
+	    amithlon_poscursor apc;
+	    if (copy_from_user(&apc, (void *) arg, sizeof(apc)))
+	      return -EFAULT;
+	    rivafb_amithlon_poscursor(rivainfo,apc.x,apc.y,apc.on);
+	    return 0;
+	  }
+	 default:
+	    return -EINVAL;
+	}
 }
 
 static int rivafb_rasterimg(struct fb_info *info, int start)

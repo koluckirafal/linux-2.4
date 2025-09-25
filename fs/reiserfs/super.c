@@ -1,17 +1,9 @@
 /*
- * Copyright 2000 by Hans Reiser, licensing governed by reiserfs/README
- *
- * Trivial changes by Alan Cox to add the LFS fixes
- *
- * Trivial Changes:
- * Rights granted to Hans Reiser to redistribute under other terms providing
- * he accepts all liability including but not limited to patent, fitness
- * for purpose, and direct or indirect claims arising from failure to perform.
- *
- * NO WARRANTY
+ * Copyright 1996, 1997, 1998 Hans Reiser, see reiserfs/README for licensing and copyright details
  */
 
-#include <linux/config.h>
+#ifdef __KERNEL__
+
 #include <linux/module.h>
 #include <linux/sched.h>
 #include <asm/uaccess.h>
@@ -22,6 +14,7 @@
 
 #define REISERFS_OLD_BLOCKSIZE 4096
 #define REISERFS_SUPER_MAGIC_STRING_OFFSET_NJ 20
+
 
 
 
@@ -38,39 +31,15 @@ void reiserfs_write_super (struct super_block * s)
   int dirty = 0 ;
   lock_kernel() ;
   if (!(s->s_flags & MS_RDONLY)) {
+    unlock_super(s) ;
     dirty = flush_old_commits(s, 1) ;
+    lock_super(s) ;
   }
   s->s_dirt = dirty;
   unlock_kernel() ;
 }
 
-//
-// a portion of this function, particularly the VFS interface portion,
-// was derived from minix or ext2's analog and evolved as the
-// prototype did. You should be able to tell which portion by looking
-// at the ext2 code and comparing. It's subfunctions contain no code
-// used as a template unless they are so labeled.
-//
-void reiserfs_write_super_lockfs (struct super_block * s)
-{
 
-  int dirty = 0 ;
-  struct reiserfs_transaction_handle th ;
-  lock_kernel() ;
-  if (!(s->s_flags & MS_RDONLY)) {
-    journal_begin(&th, s, 1) ;
-    reiserfs_prepare_for_journal(s, SB_BUFFER_WITH_SB(s), 1);
-    journal_mark_dirty(&th, s, SB_BUFFER_WITH_SB (s));
-    reiserfs_block_writes(&th) ;
-    journal_end(&th, s, 1) ;
-  }
-  s->s_dirt = dirty;
-  unlock_kernel() ;
-}
-
-void reiserfs_unlockfs(struct super_block *s) {
-  reiserfs_allow_writes(s) ;
-}
 
 //
 // a portion of this function, particularly the VFS interface portion,
@@ -87,18 +56,24 @@ void reiserfs_put_super (struct super_block * s)
   int i;
   struct reiserfs_transaction_handle th ;
   
+  /* the end_io task has to call get_super, which locks the super, which
+  ** will deadlock with the journal.  So, we unlock, and then relock
+  ** when the journal is done.
+  ** 
+  ** this sucks.
+  */
+  unlock_super(s) ;
+  journal_begin(&th, s, 10) ;
+
   /* change file system state to current state if it was mounted with read-write permissions */
   if (!(s->s_flags & MS_RDONLY)) {
-    journal_begin(&th, s, 10) ;
     reiserfs_prepare_for_journal(s, SB_BUFFER_WITH_SB(s), 1) ;
     s->u.reiserfs_sb.s_rs->s_state = le16_to_cpu (s->u.reiserfs_sb.s_mount_state);
     journal_mark_dirty(&th, s, SB_BUFFER_WITH_SB (s));
   }
 
-  /* note, journal_release checks for readonly mount, and can decide not
-  ** to do a journal_end
-  */
   journal_release(&th, s) ;
+  lock_super(s) ;
 
   for (i = 0; i < SB_BMAP_NR (s); i ++)
     brelse (SB_AP_BITMAP (s)[i]);
@@ -126,14 +101,8 @@ struct super_operations reiserfs_sops =
   delete_inode: reiserfs_delete_inode,
   put_super: reiserfs_put_super,
   write_super: reiserfs_write_super,
-  write_super_lockfs: reiserfs_write_super_lockfs,
-  unlockfs: reiserfs_unlockfs,
   statfs: reiserfs_statfs,
   remount_fs: reiserfs_remount,
-
-  fh_to_dentry: reiserfs_fh_to_dentry,
-  dentry_to_fh: reiserfs_dentry_to_fh,
-
 };
 
 /* this was (ext2)parse_options */
@@ -144,8 +113,7 @@ static int parse_options (char * options, unsigned long * mount_options, unsigne
   
     *blocks = 0;
     if (!options)
-	/* use default configuration: create tails, journaling on, no
-           conversion to newest format */
+	/* use default configuration: complex read, create tails, preserve on */
 	return 1;
     for (this_char = strtok (options, ","); this_char != NULL; this_char = strtok (NULL, ",")) {
 	if ((value = strchr (this_char, '=')) != NULL)
@@ -156,30 +124,15 @@ static int parse_options (char * options, unsigned long * mount_options, unsigne
 	    // if this is set, we update super block such that
 	    // the partition will not be mounable by 3.5.x anymore
 	    set_bit (REISERFS_CONVERT, mount_options);
-	} else if (!strcmp (this_char, "noborder")) {
-				/* this is used for benchmarking
-                                   experimental variations, it is not
-                                   intended for users to use, only for
-                                   developers who want to casually
-                                   hack in something to test */
-	    set_bit (REISERFS_NO_BORDER, mount_options);
-	} else if (!strcmp (this_char, "no_unhashed_relocation")) {
-	    set_bit (REISERFS_NO_UNHASHED_RELOCATION, mount_options);
-	} else if (!strcmp (this_char, "hashed_relocation")) {
-	    set_bit (REISERFS_HASHED_RELOCATION, mount_options);
-	} else if (!strcmp (this_char, "test4")) {
-	    set_bit (REISERFS_TEST4, mount_options);
 	} else if (!strcmp (this_char, "nolog")) {
 	    reiserfs_warning("reiserfs: nolog mount option not supported yet\n");
 	} else if (!strcmp (this_char, "replayonly")) {
 	    set_bit (REPLAYONLY, mount_options);
 	} else if (!strcmp (this_char, "resize")) {
-	    if (value && *value){
-		*blocks = simple_strtoul (value, &value, 0);
-	    } else {
+	    if (!value || !*value){
 	  	printk("reiserfs: resize option requires a value\n");
-		return 0;
 	    }
+	    *blocks = simple_strtoul (value, &value, 0);
 	} else if (!strcmp (this_char, "hash")) {
 	    if (value && *value) {
 		/* if they specify any hash option, we force detection
@@ -237,11 +190,8 @@ int reiserfs_remount (struct super_block * s, int * flags, char * data)
   if (!parse_options(data, &mount_options, &blocks))
   	return 0;
 
-  if(blocks) {
-      int rc = reiserfs_resize(s, blocks);
-      if (rc != 0)
-	  return rc;
-  }
+  if(blocks) 
+  	reiserfs_resize(s, blocks);
 
   if ((unsigned long)(*flags & MS_RDONLY) == (s->s_flags & MS_RDONLY)) {
     /* there is nothing to do to remount read-only fs as read-only fs */
@@ -254,16 +204,18 @@ int reiserfs_remount (struct super_block * s, int * flags, char * data)
       return 0;
     }
 
+    unlock_super(s) ;
     journal_begin(&th, s, 10) ;
+    lock_super(s) ;
     /* Mounting a rw partition read-only. */
     reiserfs_prepare_for_journal(s, SB_BUFFER_WITH_SB(s), 1) ;
     rs->s_state = cpu_to_le16 (s->u.reiserfs_sb.s_mount_state);
     journal_mark_dirty(&th, s, SB_BUFFER_WITH_SB (s));
     s->s_dirt = 0;
   } else {
-    s->u.reiserfs_sb.s_mount_state = le16_to_cpu(rs->s_state) ;
-    s->s_flags &= ~MS_RDONLY ; /* now it is safe to call journal_begin */
+    unlock_super(s) ;
     journal_begin(&th, s, 10) ;
+    lock_super(s) ;
 
     /* Mount a partition which is read-only, read-write */
     reiserfs_prepare_for_journal(s, SB_BUFFER_WITH_SB(s), 1) ;
@@ -277,7 +229,9 @@ int reiserfs_remount (struct super_block * s, int * flags, char * data)
   }
   /* this will force a full flush of all journal lists */
   SB_JOURNAL(s)->j_must_wait = 1 ;
+  unlock_super(s) ;
   journal_end(&th, s, 10) ;
+  lock_super(s) ;
   return 0;
 }
 
@@ -287,7 +241,7 @@ static int read_bitmaps (struct super_block * s)
     int i, bmp, dl ;
     struct reiserfs_super_block * rs = SB_DISK_SUPER_BLOCK(s);
 
-    SB_AP_BITMAP (s) = reiserfs_kmalloc (sizeof (struct buffer_head *) * le16_to_cpu (rs->s_bmap_nr), GFP_NOFS, s);
+    SB_AP_BITMAP (s) = reiserfs_kmalloc (sizeof (struct buffer_head *) * le16_to_cpu (rs->s_bmap_nr), GFP_KERNEL, s);
     if (SB_AP_BITMAP (s) == 0)
 	return 1;
     memset (SB_AP_BITMAP (s), 0, sizeof (struct buffer_head *) * le16_to_cpu (rs->s_bmap_nr));
@@ -316,7 +270,7 @@ static int read_old_bitmaps (struct super_block * s)
   int bmp1 = (REISERFS_OLD_DISK_OFFSET_IN_BYTES / s->s_blocksize) + 1;  /* first of bitmap blocks */
 
   /* read true bitmap */
-  SB_AP_BITMAP (s) = reiserfs_kmalloc (sizeof (struct buffer_head *) * le16_to_cpu (rs->s_bmap_nr), GFP_NOFS, s);
+  SB_AP_BITMAP (s) = reiserfs_kmalloc (sizeof (struct buffer_head *) * le16_to_cpu (rs->s_bmap_nr), GFP_KERNEL, s);
   if (SB_AP_BITMAP (s) == 0)
     return 1;
 
@@ -409,8 +363,8 @@ static int read_super_block (struct super_block * s, int size, int offset)
     ** will work.  If block we've just read in is inside the
     ** journal for that super, it can't be valid.  
     */
-    if (bh->b_blocknr >= le32_to_cpu(rs->s_journal_block) && 
-	bh->b_blocknr < (le32_to_cpu(rs->s_journal_block) + JOURNAL_BLOCK_COUNT)) {
+    if (bh->b_blocknr >= rs->s_journal_block && 
+	bh->b_blocknr < (rs->s_journal_block + JOURNAL_BLOCK_COUNT)) {
 	brelse(bh) ;
 	printk("super-459: read_super_block: "
 	       "super found at block %lu is within its own log. "
@@ -653,12 +607,7 @@ struct super_block * reiserfs_read_super (struct super_block * s, void * data, i
 	printk ("reiserfs_read_super: unable to read bitmap\n");
 	goto error;
     }
-#ifdef CONFIG_REISERFS_CHECK
-    printk("reiserfs:warning: CONFIG_REISERFS_CHECK is set ON\n");
-    printk("reiserfs:warning: - it is slow mode for debugging.\n");
-#endif
 
-    // set_device_ro(s->s_dev, 1) ;
     if (journal_init(s)) {
 	printk("reiserfs_read_super: unable to initialize journal space\n") ;
 	goto error ;
@@ -675,10 +624,6 @@ struct super_block * reiserfs_read_super (struct super_block * s, void * data, i
     if (replay_only (s))
 	goto error;
 
-    if (is_read_only(s->s_dev) && !(s->s_flags & MS_RDONLY)) {
-        printk("clm-7000: Detected readonly device, marking FS readonly\n") ;
-	s->s_flags |= MS_RDONLY ;
-    }
     args.objectid = REISERFS_ROOT_PARENT_OBJECTID ;
     root_inode = iget4 (s, REISERFS_ROOT_OBJECTID, 0, (void *)(&args));
     if (!root_inode) {
@@ -721,18 +666,17 @@ struct super_block * reiserfs_read_super (struct super_block * s, void * data, i
         if ( old_magic ) {
 	    // filesystem created under 3.5.x found
 	    if (!old_format_only (s)) {
-		reiserfs_warning("reiserfs: converting 3.5.x filesystem to the new format\n") ;
+		reiserfs_warning("reiserfs: WARNING! Mounting a 3.5.X disk. Converting to new format\n") ;
 		// after this 3.5.x will not be able to mount this partition
 		memcpy (rs->s_magic, REISER2FS_SUPER_MAGIC_STRING, 
 			sizeof (REISER2FS_SUPER_MAGIC_STRING));
 
 		reiserfs_convert_objectid_map_v1(s) ;
-	    } else {
-		reiserfs_warning("reiserfs: using 3.5.x disk format\n") ;
-	    }
+	    } else
+		reiserfs_warning("reiserfs: WARNING! Mounting a 3.5.X disk. Keeping old format\n") ;
 	} else {
 	    // new format found
-	    set_bit (REISERFS_CONVERT, &(s->u.reiserfs_sb.s_mount_opt));
+	    set_bit (REISERFS_CONVERT, &(s->u.reiserfs_sb.s_mount_opt));	    
 	}
 
 	// mark hash in super block: it could be unset. overwrite should be ok
@@ -741,13 +685,10 @@ struct super_block * reiserfs_read_super (struct super_block * s, void * data, i
 	journal_mark_dirty(&th, s, SB_BUFFER_WITH_SB (s));
 	journal_end(&th, s, 1) ;
 	s->s_dirt = 0;
-    } else {
-	struct reiserfs_super_block * rs = SB_DISK_SUPER_BLOCK (s);
-	if (strncmp (rs->s_magic,  REISER2FS_SUPER_MAGIC_STRING, 
-		     strlen ( REISER2FS_SUPER_MAGIC_STRING))) {
-	    reiserfs_warning("reiserfs: using 3.5.x disk format\n") ;
-	}
     }
+
+    /* we have to do this to make journal writes work correctly */
+    SB_BUFFER_WITH_SB(s)->b_end_io = reiserfs_end_buffer_io_sync ;
 
     init_waitqueue_head (&(s->u.reiserfs_sb.s_wait));
 
